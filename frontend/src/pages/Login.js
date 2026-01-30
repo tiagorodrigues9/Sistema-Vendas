@@ -204,7 +204,7 @@ const Login = () => {
 
         {/* Footer */}
         <div className="text-center text-sm text-gray-500">
-          <p>&copy; 2024 Sistema PDV. Todos os direitos reservados.</p>
+          <p>&copy; 2026 Sistema PDV. Desenvolvido por Tiago Rodrigues.</p>
         </div>
       </div>
     </div>

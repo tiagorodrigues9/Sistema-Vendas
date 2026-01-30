@@ -133,6 +133,58 @@ router.post('/login', validateLogin, async (req, res) => {
   }
 });
 
+// Registrar usuário em empresa existente
+router.post('/register-user', async (req, res) => {
+  try {
+    const { name, email, password, companyId } = req.body;
+
+    // Verificar se a empresa existe
+    const company = await Company.findById(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'Empresa não encontrada' });
+    }
+
+    // Verificar se usuário já existe
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'E-mail já cadastrado' });
+    }
+
+    // Criar usuário vinculado à empresa
+    const user = new User({
+      name,
+      email,
+      password,
+      company: companyId,
+      role: 'funcionario', // Funcionário por padrão
+      isApproved: false // Sempre precisa de aprovação manual
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      message: 'Usuário criado com sucesso!',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isApproved: user.isApproved
+      },
+      company: {
+        id: company._id,
+        cnpj: company.cnpj,
+        companyName: company.companyName,
+        isApproved: company.isApproved
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro ao registrar usuário:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 router.get('/me', auth, async (req, res) => {
   try {
     res.json({

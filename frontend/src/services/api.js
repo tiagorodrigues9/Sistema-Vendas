@@ -44,6 +44,7 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (credentials) => api.post('/auth/login', credentials),
   register: (userData) => api.post('/auth/register', userData),
+  registerUser: (userData) => api.post('/auth/register-user', userData),
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
 };
@@ -62,6 +63,7 @@ export const usersAPI = {
 
 // Companies API
 export const companiesAPI = {
+  getByCNPJ: (cnpj) => api.get(`/companies/cnpj/${cnpj}`),
   getAll: (params) => api.get('/companies', { params }),
   getPending: () => api.get('/companies/pending'),
   getById: (id) => api.get(`/companies/${id}`),

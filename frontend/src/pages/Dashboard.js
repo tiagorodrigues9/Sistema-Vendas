@@ -1,67 +1,133 @@
-import React, { useState } from 'react';
-import { BarChart3, TrendingUp, Users, Package, DollarSign, Download, Calendar, Filter, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BarChart3, TrendingUp, Users, Package, DollarSign, Download, Calendar, Filter, ArrowUpRight, ArrowDownRight, RefreshCw, AlertTriangle } from 'lucide-react';
+import { dashboardAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
 const Dashboard = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Dados mockados para relatórios
-  const [salesData] = useState([
-    { month: 'Jan', total: 15000, orders: 120 },
-    { month: 'Fev', total: 18000, orders: 145 },
-    { month: 'Mar', total: 22000, orders: 180 },
-    { month: 'Abr', total: 19000, orders: 160 },
-    { month: 'Mai', total: 25000, orders: 200 },
-    { month: 'Jun', total: 28000, orders: 220 }
-  ]);
+  // Estados para dados reais
+  const [overview, setOverview] = useState(null);
+  const [monthlySales, setMonthlySales] = useState([]);
+  const [topCustomers, setTopCustomers] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [lowStockProducts, setLowStockProducts] = useState([]);
+  const [inventoryMovements, setInventoryMovements] = useState([]);
 
-  const [topCustomers] = useState([
-    { name: 'João Silva', total: 3500, orders: 15 },
-    { name: 'Maria Santos', total: 2800, orders: 12 },
-    { name: 'Pedro Oliveira', total: 2200, orders: 8 },
-    { name: 'Ana Costa', total: 1800, orders: 10 },
-    { name: 'Carlos Silva', total: 1500, orders: 7 }
-  ]);
+  // Carregar dados do dashboard
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      const [
+        overviewResponse,
+        monthlySalesResponse,
+        topCustomersResponse,
+        topProductsResponse,
+        lowStockResponse,
+        movementsResponse
+      ] = await Promise.all([
+        dashboardAPI.getOverview(),
+        dashboardAPI.getMonthlySales(),
+        dashboardAPI.getTopCustomers({ period: selectedPeriod }),
+        dashboardAPI.getTopProducts({ period: selectedPeriod }),
+        dashboardAPI.getLowStock(),
+        dashboardAPI.getInventoryMovements({ period: selectedPeriod })
+      ]);
 
-  const [topProducts] = useState([
-    { name: 'Produto Exemplo 1', quantity: 150, revenue: 1650 },
-    { name: 'Produto Exemplo 2', quantity: 120, revenue: 3060 },
-    { name: 'Produto Exemplo 3', quantity: 200, revenue: 1150 },
-    { name: 'Produto Exemplo 4', quantity: 80, revenue: 2400 },
-    { name: 'Produto Exemplo 5', quantity: 95, revenue: 1425 }
-  ]);
-
-  const [topEntries] = useState([
-    { name: 'Fornecedor A', quantity: 500, value: 8000 },
-    { name: 'Fornecedor B', quantity: 350, value: 5500 },
-    { name: 'Fornecedor C', quantity: 280, value: 4200 },
-    { name: 'Fornecedor D', quantity: 200, value: 3500 },
-    { name: 'Fornecedor E', quantity: 150, value: 2800 }
-  ]);
-
-  const currentMonthSales = 28000;
-  const lastMonthSales = 25000;
-  const totalProducts = 1250;
-  const totalCustomers = 48;
-  const totalReceivables = 8500;
-
-  const salesGrowth = ((currentMonthSales - lastMonthSales) / lastMonthSales * 100).toFixed(1);
-
-  const exportReport = (type, format) => {
-    alert(`Exportando relatório ${type} em formato ${format.toUpperCase()}...`);
-  };
-
-  const generatePeriodReport = () => {
-    if (startDate && endDate) {
-      alert(`Gerando relatório de ${startDate} a ${endDate}`);
-    } else {
-      alert('Selecione um período válido');
+      setOverview(overviewResponse.data);
+      setMonthlySales(monthlySalesResponse.data.data || []);
+      setTopCustomers(topCustomersResponse.data.data || []);
+      setTopProducts(topProductsResponse.data.data || []);
+      setLowStockProducts(lowStockResponse.data || []);
+      setInventoryMovements(movementsResponse.data.data || []);
+    } catch (error) {
+      console.error('Erro ao carregar dados do dashboard:', error);
+      toast.error('Erro ao carregar dados do dashboard');
+      
+      // Inicializar com valores vazios para evitar erros
+      setOverview({
+        totalSales: 0,
+        monthlySales: { total: 0, count: 0 },
+        todaySales: { total: 0, count: 0 },
+        lowStockProducts: 0,
+        totalCustomers: 0,
+        pendingReceivables: { total: 0, count: 0 }
+      });
+      setMonthlySales([]);
+      setTopCustomers([]);
+      setTopProducts([]);
+      setLowStockProducts([]);
+      setInventoryMovements([]);
+    } finally {
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    loadDashboardData();
+  }, [selectedPeriod]);
+
+  // Atualizar dados
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+    toast.success('Dados atualizados');
+  };
+
+  // Formatar moeda
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value || 0);
+  };
+
+  // Calcular crescimento
+  const calculateGrowth = (current, previous) => {
+    if (!previous || previous === 0) return 0;
+    return ((current - previous) / previous * 100).toFixed(1);
+  };
+
+  // Obter dados do mês atual e anterior para comparação
+  const getCurrentAndPreviousMonth = () => {
+    const currentMonth = monthlySales.find(sale => {
+      const month = new Date().getMonth() + 1;
+      return sale.month === month;
+    });
+    
+    const previousMonth = monthlySales.find(sale => {
+      const month = new Date().getMonth();
+      return sale.month === month;
+    });
+
+    return { currentMonth, previousMonth };
+  };
+
+  const { currentMonth, previousMonth } = getCurrentAndPreviousMonth();
+  const salesGrowth = calculateGrowth(
+    currentMonth?.total || 0,
+    previousMonth?.total || 0
+  );
+
+  if (loading) {
+    return (
+      <div className="container-responsive">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container-responsive">
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <div className="flex gap-3">
@@ -70,12 +136,18 @@ const Dashboard = () => {
             onChange={(e) => setSelectedPeriod(e.target.value)}
             className="input"
           >
-            <option value="today">Hoje</option>
-            <option value="week">Esta Semana</option>
-            <option value="month">Este Mês</option>
-            <option value="year">Este Ano</option>
-            <option value="custom">Período Personalizado</option>
+            <option value="week">Última Semana</option>
+            <option value="month">Último Mês</option>
+            <option value="year">Último Ano</option>
           </select>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="btn btn-secondary flex items-center gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
         </div>
       </div>
 
@@ -88,46 +160,57 @@ const Dashboard = () => {
           <div className="card-content">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-green-600">R$ {currentMonthSales.toLocaleString('pt-BR')}</p>
-                <div className="flex items-center mt-1">
-                  {salesGrowth > 0 ? (
-                    <ArrowUpRight className="w-4 h-4 text-green-500 mr-1" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4 text-red-500 mr-1" />
-                  )}
-                  <span className={`text-sm ${salesGrowth > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {salesGrowth}% vs mês anterior
-                  </span>
-                </div>
+                <p className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(overview?.monthlySales?.total || 0)}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {overview?.monthlySales?.count || 0} vendas
+                </p>
               </div>
-              <DollarSign className="w-8 h-8 text-green-600" />
+              <DollarSign className="w-8 h-8 text-blue-600" />
+            </div>
+            <div className="mt-2 flex items-center text-sm">
+              {Number(salesGrowth) >= 0 ? (
+                <ArrowUpRight className="w-4 h-4 text-green-500 mr-1" />
+              ) : (
+                <ArrowDownRight className="w-4 h-4 text-red-500 mr-1" />
+              )}
+              <span className={Number(salesGrowth) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                {Math.abs(Number(salesGrowth))}% vs mês anterior
+              </span>
             </div>
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Produtos em Estoque</h3>
+            <h3 className="card-title">Vendas Hoje</h3>
           </div>
           <div className="card-content">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-blue-600">{totalProducts.toLocaleString('pt-BR')}</p>
-                <p className="text-sm text-gray-500">itens</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatCurrency(overview?.todaySales?.total || 0)}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {overview?.todaySales?.count || 0} vendas
+                </p>
               </div>
-              <Package className="w-8 h-8 text-blue-600" />
+              <TrendingUp className="w-8 h-8 text-green-600" />
             </div>
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Clientes Ativos</h3>
+            <h3 className="card-title">Total de Clientes</h3>
           </div>
           <div className="card-content">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-purple-600">{totalCustomers}</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {overview?.totalCustomers || 0}
+                </p>
                 <p className="text-sm text-gray-500">cadastrados</p>
               </div>
               <Users className="w-8 h-8 text-purple-600" />
@@ -142,138 +225,53 @@ const Dashboard = () => {
           <div className="card-content">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-orange-600">R$ {totalReceivables.toLocaleString('pt-BR')}</p>
-                <p className="text-sm text-gray-500">em aberto</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {formatCurrency(overview?.pendingReceivables?.total || 0)}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {overview?.pendingReceivables?.count || 0} contas
+                </p>
               </div>
-              <DollarSign className="w-8 h-8 text-orange-600" />
+              <BarChart3 className="w-8 h-8 text-orange-600" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filtros de Período Personalizado */}
-      {selectedPeriod === 'custom' && (
-        <div className="card mb-6">
-          <div className="card-header">
-            <h3 className="card-title">Período Personalizado</h3>
-          </div>
+      {/* Alerta de Estoque Baixo */}
+      {lowStockProducts.length > 0 && (
+        <div className="card mb-6 border-l-4 border-red-500">
           <div className="card-content">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center">
+              <AlertTriangle className="w-5 h-5 text-red-500 mr-3" />
               <div>
-                <label className="block text-sm font-medium mb-1">Data Inicial</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Data Final</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="input"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={generatePeriodReport}
-                  className="btn btn-primary w-full"
-                >
-                  <Filter className="w-4 h-4 mr-2" />
-                  Gerar Relatório
-                </button>
+                <h4 className="font-medium text-red-800">Atenção: Estoque Baixo</h4>
+                <p className="text-red-600">
+                  {lowStockProducts.length} produto(s) precisam de reposição
+                </p>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Relatórios em Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Vendas por Período */}
+        {/* Gráfico de Vendas Mensais */}
         <div className="card">
           <div className="card-header">
-            <div className="flex justify-between items-center">
-              <h3 className="card-title">Vendas por Período</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => exportReport('vendas', 'excel')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Excel
-                </button>
-                <button
-                  onClick={() => exportReport('vendas', 'pdf')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  PDF
-                </button>
-              </div>
-            </div>
+            <h3 className="card-title">Vendas Mensais</h3>
           </div>
           <div className="card-content">
-            <div className="space-y-3">
-              {salesData.map((item, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-medium">{item.month}</p>
-                    <p className="text-sm text-gray-500">{item.orders} pedidos</p>
+            <div className="space-y-4">
+              {monthlySales.slice(0, 6).map((sale, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+                    <span className="text-sm font-medium">{sale.monthName}</span>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">R$ {item.total.toLocaleString('pt-BR')}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex justify-between items-center">
-                <span className="font-medium">Total do Período:</span>
-                <span className="text-lg font-bold text-green-600">
-                  R$ {salesData.reduce((sum, item) => sum + item.total, 0).toLocaleString('pt-BR')}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Clientes que Mais Compram */}
-        <div className="card">
-          <div className="card-header">
-            <div className="flex justify-between items-center">
-              <h3 className="card-title">Clientes que Mais Compram</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => exportReport('clientes', 'excel')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Excel
-                </button>
-                <button
-                  onClick={() => exportReport('clientes', 'pdf')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  PDF
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="card-content">
-            <div className="space-y-3">
-              {topCustomers.map((customer, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-medium">{customer.name}</p>
-                    <p className="text-sm text-gray-500">{customer.orders} pedidos</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold">R$ {customer.total.toLocaleString('pt-BR')}</p>
+                    <p className="font-medium">{formatCurrency(sale.total)}</p>
+                    <p className="text-xs text-gray-500">{sale.count} vendas</p>
                   </div>
                 </div>
               ))}
@@ -281,122 +279,98 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Produtos Mais Vendidos */}
+        {/* Top Clientes */}
         <div className="card">
           <div className="card-header">
-            <div className="flex justify-between items-center">
-              <h3 className="card-title">Produtos Mais Vendidos</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => exportReport('produtos-vendidos', 'excel')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Excel
-                </button>
-                <button
-                  onClick={() => exportReport('produtos-vendidos', 'pdf')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  PDF
-                </button>
-              </div>
-            </div>
+            <h3 className="card-title">Top Clientes</h3>
           </div>
           <div className="card-content">
-            <div className="space-y-3">
-              {topProducts.map((product, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-medium">{product.name}</p>
-                    <p className="text-sm text-gray-500">{product.quantity} unidades</p>
+            {topCustomers.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">Nenhum cliente encontrado</p>
+            ) : (
+              <div className="space-y-4">
+                {topCustomers.slice(0, 5).map((customer, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                        <Users className="w-4 h-4 text-purple-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{customer._id}</p>
+                        <p className="text-xs text-gray-500">{customer.count} compras</p>
+                      </div>
+                    </div>
+                    <p className="font-medium">{formatCurrency(customer.totalValue)}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold">R$ {product.revenue.toLocaleString('pt-BR')}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Entradas de Produtos */}
-        <div className="card">
-          <div className="card-header">
-            <div className="flex justify-between items-center">
-              <h3 className="card-title">Entradas de Produtos</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => exportReport('entradas', 'excel')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  Excel
-                </button>
-                <button
-                  onClick={() => exportReport('entradas', 'pdf')}
-                  className="btn btn-secondary btn-sm"
-                >
-                  <Download className="w-4 h-4 mr-1" />
-                  PDF
-                </button>
+                ))}
               </div>
-            </div>
-          </div>
-          <div className="card-content">
-            <div className="space-y-3">
-              {topEntries.map((entry, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                  <div>
-                    <p className="font-medium">{entry.name}</p>
-                    <p className="text-sm text-gray-500">{entry.quantity} unidades</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold">R$ {entry.value.toLocaleString('pt-BR')}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Relatório Completo */}
-      <div className="card">
-        <div className="card-header">
-          <h3 className="card-title">Relatório Completo do Sistema</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top Produtos */}
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">Top Produtos Vendidos</h3>
+          </div>
+          <div className="card-content">
+            {topProducts.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">Nenhum produto encontrado</p>
+            ) : (
+              <div className="space-y-4">
+                {topProducts.slice(0, 5).map((product, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                        <Package className="w-4 h-4 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{product._id}</p>
+                        <p className="text-xs text-gray-500">
+                          {product.totalQuantity} unidades
+                        </p>
+                      </div>
+                    </div>
+                    <p className="font-medium">{formatCurrency(product.totalValue)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="card-content">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button
-              onClick={() => exportReport('completo', 'excel')}
-              className="btn btn-primary"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Exportar Excel Completo
-            </button>
-            <button
-              onClick={() => exportReport('completo', 'pdf')}
-              className="btn btn-primary"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Exportar PDF Completo
-            </button>
-            <button
-              onClick={() => exportReport('financeiro', 'excel')}
-              className="btn btn-secondary"
-            >
-              <DollarSign className="w-4 h-4 mr-2" />
-              Relatório Financeiro
-            </button>
-            <button
-              onClick={() => exportReport('estoque', 'excel')}
-              className="btn btn-secondary"
-            >
-              <Package className="w-4 h-4 mr-2" />
-              Relatório de Estoque
-            </button>
+
+        {/* Produtos com Estoque Baixo */}
+        <div className="card">
+          <div className="card-header">
+            <h3 className="card-title">Estoque Baixo</h3>
+          </div>
+          <div className="card-content">
+            {lowStockProducts.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">Nenhum produto com estoque baixo</p>
+            ) : (
+              <div className="space-y-4">
+                {lowStockProducts.slice(0, 5).map((product, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{product.description}</p>
+                        <p className="text-xs text-gray-500">
+                          Estoque: {product.quantity} / Mínimo: {product.minStock}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-red-600 font-medium">
+                      {product.quantity} {product.unit}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

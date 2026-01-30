@@ -4,6 +4,35 @@ const User = require('../models/User');
 const { auth, authorize } = require('../middleware/auth');
 const router = express.Router();
 
+// Buscar empresa por CNPJ (pública para registro)
+router.get('/cnpj/:cnpj', async (req, res) => {
+  try {
+    const { cnpj } = req.params;
+    const cleanedCnpj = cnpj.replace(/\D/g, '');
+    
+    if (cleanedCnpj.length !== 14) {
+      return res.status(400).json({ message: 'CNPJ inválido' });
+    }
+    
+    const company = await Company.findOne({ cnpj: cleanedCnpj });
+    
+    if (!company) {
+      return res.status(404).json({ message: 'Empresa não encontrada' });
+    }
+    
+    res.json({
+      _id: company._id,
+      companyName: company.companyName,
+      cnpj: company.cnpj,
+      email: company.email,
+      ownerName: company.ownerName
+    });
+  } catch (error) {
+    console.error('Erro ao buscar empresa por CNPJ:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 router.get('/', auth, authorize('administrador'), async (req, res) => {
   try {
     const { page = 1, limit = 10, search = '', isApproved = '' } = req.query;
@@ -114,11 +143,6 @@ router.put('/:id/approve', auth, authorize('administrador'), async (req, res) =>
     if (!company) {
       return res.status(404).json({ message: 'Empresa não encontrada' });
     }
-
-    await User.updateMany(
-      { company: company._id },
-      { isApproved: true }
-    );
 
     res.json({ message: 'Empresa aprovada com sucesso', company });
   } catch (error) {

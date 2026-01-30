@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, Package, BarChart3, Download, Check, PlusCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Edit2, Trash2, Package, BarChart3, Download, Check, PlusCircle, RefreshCw, AlertTriangle } from 'lucide-react';
+import { productsAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
 const Products = () => {
   const [showForm, setShowForm] = useState(false);
@@ -8,6 +10,11 @@ const Products = () => {
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  const [products, setProducts] = useState([]);
+  
   const [formData, setFormData] = useState({
     barcode: '',
     description: '',
@@ -17,90 +24,66 @@ const Products = () => {
     quantity: 0,
     unit: 'UND',
     costPrice: 0,
-    salePrice: 0
+    salePrice: 0,
+    minStock: 0
   });
+  
   const [stockData, setStockData] = useState({
     quantity: 0,
     justification: ''
   });
 
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      barcode: '7891234567890',
-      description: 'Produto Exemplo 1',
-      brand: 'Marca A',
-      group: 'Alimentos',
-      subgroup: 'Bebidas',
-      quantity: 50,
-      unit: 'UND',
-      costPrice: 8.50,
-      salePrice: 10.99,
-      isDeleted: false
-    },
-    {
-      id: 2,
-      barcode: '7891234567891',
-      description: 'Produto Exemplo 2',
-      brand: 'Marca B',
-      group: 'Limpeza',
-      subgroup: 'Detergentes',
-      quantity: 30,
-      unit: 'LT',
-      costPrice: 18.00,
-      salePrice: 25.50,
-      isDeleted: false
+  // Carregar produtos
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await productsAPI.getAll();
+      setProducts(response.data.products || []);
+    } catch (error) {
+      console.error('Erro ao carregar produtos:', error);
+      toast.error('Erro ao carregar produtos');
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-  ]);
-
-  const [deletedProducts, setDeletedProducts] = useState([
-    {
-      id: 3,
-      barcode: '7891234567892',
-      description: 'Produto Antigo',
-      brand: 'Marca C',
-      group: 'Papelaria',
-      subgroup: 'Cadernos',
-      quantity: 0,
-      unit: 'UND',
-      costPrice: 5.00,
-      salePrice: 7.50,
-      isDeleted: true
-    }
-  ]);
-
-  const filteredProducts = products.filter(product =>
-    !product.isDeleted &&
-    (product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     product.barcode.includes(searchTerm) ||
-     product.brand.toLowerCase().includes(searchTerm))
-  );
-
-  const filteredDeletedProducts = deletedProducts.filter(product =>
-    product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.barcode.includes(searchTerm) ||
-    product.brand.toLowerCase().includes(searchTerm)
-  );
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingProduct) {
-      setProducts(products.map(product =>
-        product.id === editingProduct.id
-          ? { ...product, ...formData }
-          : product
-      ));
-    } else {
-      const newProduct = {
-        id: Date.now(),
-        ...formData,
-        isDeleted: false
-      };
-      setProducts([...products, newProduct]);
-    }
-    resetForm();
   };
 
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  // Atualizar dados
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadProducts();
+    setRefreshing(false);
+    toast.success('Dados atualizados');
+  };
+
+  // Filtrar produtos
+  const filteredProducts = products.filter(product =>
+    product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.group?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Formatar valor
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value || 0);
+  };
+
+  // Obter status do estoque
+  const getStockStatus = (product) => {
+    if (product.quantity <= 0) return { color: 'text-red-600 bg-red-100', text: 'Sem Estoque' };
+    if (product.quantity <= product.minStock) return { color: 'text-yellow-600 bg-yellow-100', text: 'Estoque Baixo' };
+    return { color: 'text-green-600 bg-green-100', text: 'Em Estoque' };
+  };
+
+  // Resetar formulário
   const resetForm = () => {
     setFormData({
       barcode: '',
@@ -111,65 +94,90 @@ const Products = () => {
       quantity: 0,
       unit: 'UND',
       costPrice: 0,
-      salePrice: 0
+      salePrice: 0,
+      minStock: 0
     });
-    setShowForm(false);
     setEditingProduct(null);
   };
 
-  const editProduct = (product) => {
-    setEditingProduct(product);
-    setFormData({
-      barcode: product.barcode,
-      description: product.description,
-      brand: product.brand,
-      group: product.group,
-      subgroup: product.subgroup,
-      quantity: product.quantity,
-      unit: product.unit,
-      costPrice: product.costPrice,
-      salePrice: product.salePrice
-    });
+  // Abrir formulário
+  const openForm = (product = null) => {
+    if (product) {
+      setEditingProduct(product);
+      setFormData({
+        barcode: product.barcode || '',
+        description: product.description || '',
+        brand: product.brand || '',
+        group: product.group || '',
+        subgroup: product.subgroup || '',
+        quantity: product.quantity || 0,
+        unit: product.unit || 'UND',
+        costPrice: product.costPrice || 0,
+        salePrice: product.salePrice || 0,
+        minStock: product.minStock || 0
+      });
+    } else {
+      resetForm();
+    }
     setShowForm(true);
   };
 
-  const deleteProduct = (product) => {
-    setProducts(products.filter(p => p.id !== product.id));
-    setDeletedProducts([...deletedProducts, { ...product, isDeleted: true }]);
-  };
-
-  const restoreProduct = (product) => {
-    setDeletedProducts(deletedProducts.filter(p => p.id !== product.id));
-    setProducts([...products, { ...product, isDeleted: false }]);
-  };
-
-  const permanentDelete = (product) => {
-    setDeletedProducts(deletedProducts.filter(p => p.id !== product.id));
-  };
-
-  const openStockModal = (product) => {
-    setSelectedProduct(product);
-    setStockData({ quantity: 0, justification: '' });
-    setShowStockModal(true);
-  };
-
-  const handleStockAdjustment = (type) => {
-    if (selectedProduct && stockData.quantity !== 0 && stockData.justification) {
-      const adjustment = type === 'add' ? stockData.quantity : -stockData.quantity;
-      setProducts(products.map(product =>
-        product.id === selectedProduct.id
-          ? { ...product, quantity: product.quantity + adjustment }
-          : product
-      ));
-      setShowStockModal(false);
-      setSelectedProduct(null);
-      setStockData({ quantity: 0, justification: '' });
+  // Salvar produto
+  const handleSave = async () => {
+    try {
+      if (editingProduct) {
+        await productsAPI.update(editingProduct._id, formData);
+        toast.success('Produto atualizado com sucesso');
+      } else {
+        await productsAPI.create(formData);
+        toast.success('Produto criado com sucesso');
+      }
+      
+      setShowForm(false);
+      resetForm();
+      loadProducts();
+    } catch (error) {
+      console.error('Erro ao salvar produto:', error);
+      toast.error('Erro ao salvar produto');
     }
   };
 
-  const generateReport = (type) => {
-    alert(`Gerando relatório ${type} de produtos...`);
+  // Excluir produto
+  const handleDelete = async (productId) => {
+    try {
+      await productsAPI.delete(productId);
+      toast.success('Produto excluído com sucesso');
+      loadProducts();
+      setShowTrash(false);
+    } catch (error) {
+      console.error('Erro ao excluir produto:', error);
+      toast.error('Erro ao excluir produto');
+    }
   };
+
+  // Ajustar estoque
+  const handleStockAdjustment = async () => {
+    try {
+      await productsAPI.adjustStock(selectedProduct._id, stockData);
+      toast.success('Estoque ajustado com sucesso');
+      setShowStockModal(false);
+      setStockData({ quantity: 0, justification: '' });
+      loadProducts();
+    } catch (error) {
+      console.error('Erro ao ajustar estoque:', error);
+      toast.error('Erro ao ajustar estoque');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container-responsive">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container-responsive">
@@ -177,159 +185,22 @@ const Products = () => {
         <h1 className="text-2xl font-bold">Produtos</h1>
         <div className="flex gap-3">
           <button
-            onClick={() => generateReport('cadastro')}
-            className="btn btn-secondary"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="btn btn-secondary flex items-center gap-2"
           >
-            <Download className="w-4 h-4 mr-2" />
-            Relatório
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Atualizar
           </button>
           <button
-            onClick={() => setShowTrash(!showTrash)}
-            className={`btn ${showTrash ? 'btn-warning' : 'btn-secondary'}`}
+            onClick={() => openForm()}
+            className="btn btn-primary flex items-center gap-2"
           >
-            <Trash2 className="w-4 h-4 mr-2" />
-            {showTrash ? 'Ver Ativos' : 'Lixeira'}
+            <Plus className="w-4 h-4" />
+            Novo Produto
           </button>
-          {!showTrash && (
-            <button
-              onClick={() => setShowForm(true)}
-              className="btn btn-primary"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Cadastrar Produto
-            </button>
-          )}
         </div>
       </div>
-
-      {/* Formulário de Cadastro/Edição */}
-      {showForm && (
-        <div className="card mb-6">
-          <div className="card-header">
-            <h3 className="card-title">
-              {editingProduct ? 'Editar Produto' : 'Cadastrar Novo Produto'}
-            </h3>
-          </div>
-          <div className="card-content">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Código de Barras</label>
-                  <input
-                    type="text"
-                    value={formData.barcode}
-                    onChange={(e) => setFormData({...formData, barcode: e.target.value})}
-                    className="input"
-                    placeholder="Opcional"
-                  />
-                </div>
-                <div className="lg:col-span-2">
-                  <label className="block text-sm font-medium mb-1">Descrição *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                    className="input"
-                    placeholder="Descrição do produto"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Marca *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.brand}
-                    onChange={(e) => setFormData({...formData, brand: e.target.value})}
-                    className="input"
-                    placeholder="Marca do produto"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Grupo *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.group}
-                    onChange={(e) => setFormData({...formData, group: e.target.value})}
-                    className="input"
-                    placeholder="Grupo do produto"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Subgrupo</label>
-                  <input
-                    type="text"
-                    value={formData.subgroup}
-                    onChange={(e) => setFormData({...formData, subgroup: e.target.value})}
-                    className="input"
-                    placeholder="Opcional"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Quantidade *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value)})}
-                    className="input"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Unidade *</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                    className="input"
-                  >
-                    <option value="UND">UND</option>
-                    <option value="KG">KG</option>
-                    <option value="PCT">PCT</option>
-                    <option value="LT">LT</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Preço de Custo *</label>
-                  <input
-                    type="number"
-                    required
-                    step="0.01"
-                    min="0"
-                    value={formData.costPrice}
-                    onChange={(e) => setFormData({...formData, costPrice: parseFloat(e.target.value)})}
-                    className="input"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Preço de Venda *</label>
-                  <input
-                    type="number"
-                    required
-                    step="0.01"
-                    min="0"
-                    value={formData.salePrice}
-                    onChange={(e) => setFormData({...formData, salePrice: parseFloat(e.target.value)})}
-                    className="input"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button type="submit" className="btn btn-primary">
-                  {editingProduct ? 'Atualizar' : 'Cadastrar'}
-                </button>
-                <button type="button" onClick={resetForm} className="btn btn-secondary">
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Campo de Busca */}
       <div className="card mb-6">
@@ -338,7 +209,7 @@ const Products = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="Buscar por descrição, código ou marca..."
+              placeholder="Buscar por código, descrição, marca ou grupo..."
               className="input pl-10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -350,15 +221,13 @@ const Products = () => {
       {/* Lista de Produtos */}
       <div className="card">
         <div className="card-header">
-          <h3 className="card-title">
-            {showTrash ? 'Produtos na Lixeira' : 'Produtos Ativos'}
-          </h3>
+          <h3 className="card-title">Lista de Produtos</h3>
         </div>
         <div className="card-content">
-          {!showTrash && filteredProducts.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">Nenhum produto encontrado</p>
-          ) : showTrash && filteredDeletedProducts.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">Nenhum produto na lixeira</p>
+          {filteredProducts.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">
+              {searchTerm ? 'Nenhum produto encontrado' : 'Nenhum produto cadastrado'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -368,105 +237,74 @@ const Products = () => {
                     <th className="text-left py-3 px-4">Descrição</th>
                     <th className="text-left py-3 px-4">Marca</th>
                     <th className="text-left py-3 px-4">Grupo</th>
-                    <th className="text-center py-3 px-4">Qtd</th>
-                    <th className="text-left py-3 px-4">Un</th>
+                    <th className="text-right py-3 px-4">Estoque</th>
                     <th className="text-right py-3 px-4">Preço Custo</th>
                     <th className="text-right py-3 px-4">Preço Venda</th>
+                    <th className="text-center py-3 px-4">Status</th>
                     <th className="text-center py-3 px-4">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {!showTrash && filteredProducts.map((product) => (
-                    <tr key={product.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 text-sm">{product.barcode || '-'}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center">
-                          <Package className="w-4 h-4 mr-2 text-gray-400" />
-                          {product.description}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">{product.brand}</td>
-                      <td className="py-3 px-4">
-                        <div>
-                          <div>{product.group}</div>
-                          {product.subgroup && <div className="text-xs text-gray-500">{product.subgroup}</div>}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`font-medium ${product.quantity <= 10 ? 'text-red-600' : 'text-green-600'}`}>
-                          {product.quantity}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">{product.unit}</td>
-                      <td className="py-3 px-4 text-right">R$ {product.costPrice.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right font-medium">R$ {product.salePrice.toFixed(2)}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex justify-center gap-1">
-                          <button
-                            onClick={() => editProduct(product)}
-                            className="btn btn-primary btn-sm"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openStockModal(product)}
-                            className="btn btn-success btn-sm"
-                            title="Incluir Estoque"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteProduct(product)}
-                            className="btn btn-error btn-sm"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {showTrash && filteredDeletedProducts.map((product) => (
-                    <tr key={product.id} className="border-b bg-red-50">
-                      <td className="py-3 px-4 text-sm">{product.barcode || '-'}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center">
-                          <Package className="w-4 h-4 mr-2 text-gray-400" />
-                          {product.description}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">{product.brand}</td>
-                      <td className="py-3 px-4">
-                        <div>
-                          <div>{product.group}</div>
-                          {product.subgroup && <div className="text-xs text-gray-500">{product.subgroup}</div>}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-center text-red-600">{product.quantity}</td>
-                      <td className="py-3 px-4 text-center">{product.unit}</td>
-                      <td className="py-3 px-4 text-right">R$ {product.costPrice.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">R$ {product.salePrice.toFixed(2)}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex justify-center gap-1">
-                          <button
-                            onClick={() => restoreProduct(product)}
-                            className="btn btn-success btn-sm"
-                            title="Restaurar"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => permanentDelete(product)}
-                            className="btn btn-error btn-sm"
-                            title="Excluir Permanentemente"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredProducts.map((product) => {
+                    const stockStatus = getStockStatus(product);
+                    return (
+                      <tr key={product._id} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center">
+                            <Package className="w-4 h-4 mr-2 text-gray-400" />
+                            {product.barcode || 'N/A'}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-medium">{product.description}</td>
+                        <td className="py-3 px-4">{product.brand || 'N/A'}</td>
+                        <td className="py-3 px-4">{product.group || 'N/A'}</td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end">
+                            <span className="font-medium">{product.quantity}</span>
+                            <span className="text-gray-500 ml-1">{product.unit}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right">{formatCurrency(product.costPrice)}</td>
+                        <td className="py-3 px-4 text-right font-medium">{formatCurrency(product.salePrice)}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-1 rounded-full text-xs ${stockStatus.color}`}>
+                            {stockStatus.text}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              onClick={() => openForm(product)}
+                              className="btn btn-primary btn-sm"
+                              title="Editar"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedProduct(product);
+                                setShowStockModal(true);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              title="Ajustar Estoque"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedProduct(product);
+                                setShowTrash(true);
+                              }}
+                              className="btn btn-danger btn-sm"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -474,61 +312,286 @@ const Products = () => {
         </div>
       </div>
 
-      {/* Modal de Ajuste de Estoque */}
-      {showStockModal && selectedProduct && (
+      {/* Modal de Formulário */}
+      {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold mb-4">Ajustar Estoque</h3>
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Produto: <strong>{selectedProduct.description}</strong>
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Estoque atual: <strong>{selectedProduct.quantity} {selectedProduct.unit}</strong>
-              </p>
-              <div className="space-y-3">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">
+                {editingProduct ? 'Editar Produto' : 'Novo Produto'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowForm(false);
+                  resetForm();
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Quantidade</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Código de Barras
+                  </label>
                   <input
-                    type="number"
-                    min="1"
-                    value={stockData.quantity}
-                    onChange={(e) => setStockData({...stockData, quantity: parseInt(e.target.value)})}
-                    className="input w-full"
-                    placeholder="Quantidade para ajustar"
+                    type="text"
+                    className="input"
+                    value={formData.barcode}
+                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Justificativa *</label>
-                  <textarea
-                    required
-                    value={stockData.justification}
-                    onChange={(e) => setStockData({...stockData, justification: e.target.value})}
-                    className="input w-full"
-                    rows="3"
-                    placeholder="Motivo do ajuste de estoque"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unidade
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  >
+                    <option value="UND">UNIDADE</option>
+                    <option value="KG">QUILOGRAMA</option>
+                    <option value="LT">LITRO</option>
+                    <option value="CX">CAIXA</option>
+                    <option value="FD">FARDO</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descrição *
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Marca
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={formData.brand}
+                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Grupo
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={formData.group}
+                    onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Estoque Atual
+                  </label>
+                  <input
+                    type="number"
+                    className="input"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Estoque Mínimo
+                  </label>
+                  <input
+                    type="number"
+                    className="input"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({ ...formData, minStock: Number(e.target.value) })}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subgrupo
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={formData.subgroup}
+                    onChange={(e) => setFormData({ ...formData, subgroup: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Preço de Custo
+                  </label>
+                  <input
+                    type="number"
+                    className="input"
+                    value={formData.costPrice}
+                    onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Preço de Venda
+                  </label>
+                  <input
+                    type="number"
+                    className="input"
+                    value={formData.salePrice}
+                    onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                    min="0"
+                    step="0.01"
                   />
                 </div>
               </div>
             </div>
-            <div className="flex gap-3">
+
+            <div className="flex justify-end mt-6 gap-3">
               <button
-                onClick={() => handleStockAdjustment('add')}
-                className="btn btn-success flex-1"
-              >
-                Adicionar
-              </button>
-              <button
-                onClick={() => handleStockAdjustment('remove')}
-                className="btn btn-warning flex-1"
-              >
-                Retirar
-              </button>
-              <button
-                onClick={() => setShowStockModal(false)}
-                className="btn btn-secondary flex-1"
+                onClick={() => {
+                  setShowForm(false);
+                  resetForm();
+                }}
+                className="btn btn-secondary"
               >
                 Cancelar
+              </button>
+              <button
+                onClick={handleSave}
+                className="btn btn-primary"
+                disabled={!formData.description}
+              >
+                {editingProduct ? 'Atualizar' : 'Cadastrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Ajuste de Estoque */}
+      {showStockModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Ajustar Estoque</h3>
+              <button
+                onClick={() => {
+                  setShowStockModal(false);
+                  setStockData({ quantity: 0, justification: '' });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Produto: <span className="font-medium">{selectedProduct.description}</span>
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Estoque Atual: <span className="font-medium">{selectedProduct.quantity} {selectedProduct.unit}</span>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantidade
+                </label>
+                <input
+                  type="number"
+                  className="input"
+                  value={stockData.quantity}
+                  onChange={(e) => setStockData({ ...stockData, quantity: Number(e.target.value) })}
+                  min="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Justificativa
+                </label>
+                <textarea
+                  className="input"
+                  rows="3"
+                  value={stockData.justification}
+                  onChange={(e) => setStockData({ ...stockData, justification: e.target.value })}
+                  placeholder="Motivo do ajuste..."
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6 gap-3">
+              <button
+                onClick={() => {
+                  setShowStockModal(false);
+                  setStockData({ quantity: 0, justification: '' });
+                }}
+                className="btn btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleStockAdjustment}
+                className="btn btn-primary"
+                disabled={!stockData.quantity || !stockData.justification}
+              >
+                Ajustar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      {showTrash && selectedProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-500 mr-3" />
+              <h3 className="text-lg font-bold">Confirmar Exclusão</h3>
+            </div>
+
+            <p className="text-gray-600 mb-6">
+              Tem certeza que deseja excluir o produto "<span className="font-medium">{selectedProduct.description}</span>"? 
+              Esta ação não poderá ser desfeita.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowTrash(false)}
+                className="btn btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDelete(selectedProduct._id)}
+                className="btn btn-danger"
+              >
+                Excluir
               </button>
             </div>
           </div>

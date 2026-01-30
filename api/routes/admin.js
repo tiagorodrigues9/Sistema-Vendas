@@ -98,11 +98,6 @@ router.post('/companies/:id/approve', async (req, res) => {
       return res.status(404).json({ message: 'Empresa não encontrada' });
     }
 
-    await User.updateMany(
-      { company: company._id },
-      { isApproved: true }
-    );
-
     res.json({ message: 'Empresa aprovada com sucesso', company });
   } catch (error) {
     console.error('Erro ao aprovar empresa:', error);

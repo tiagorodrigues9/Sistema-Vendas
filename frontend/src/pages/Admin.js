@@ -1,210 +1,172 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Users, Building, Check, X, Eye, Edit2, Trash2, Key, UserCheck, BarChart3, Download, AlertCircle, Shield } from 'lucide-react';
+import { adminAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
 const Admin = () => {
   const [activeTab, setActiveTab] = useState('approvals');
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Dados mockados
-  const [pendingUsers, setPendingUsers] = useState([
-    {
-      id: 1,
-      name: 'Novo Usuario 1',
-      email: 'novo1@email.com',
-      role: 'dono',
-      company: 'Empresa Nova 1',
-      cnpj: '12345678000123',
-      registrationDate: '20/01/2026',
-      status: 'pending'
-    },
-    {
-      id: 2,
-      name: 'Novo Usuario 2',
-      email: 'novo2@email.com',
-      role: 'funcionario',
-      company: 'Empresa Nova 2',
-      cnpj: '98765432000198',
-      registrationDate: '21/01/2026',
-      status: 'pending'
-    }
-  ]);
+  // Estados para dados reais
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [pendingCompanies, setPendingCompanies] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [allCompanies, setAllCompanies] = useState([]);
+  const [dashboardStats, setDashboardStats] = useState({});
+  const [usageStats, setUsageStats] = useState([]);
 
-  const [pendingCompanies, setPendingCompanies] = useState([
-    {
-      id: 1,
-      companyName: 'Empresa Nova 1',
-      ownerName: 'Novo Usuario 1',
-      email: 'contato@empresanova1.com',
-      cnpj: '12345678000123',
-      phone: '11999999999',
-      registrationDate: '20/01/2026',
-      status: 'pending'
-    }
-  ]);
+  // Carregar dados da API
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const [allUsers, setAllUsers] = useState([
-    {
-      id: 1,
-      name: 'Administrador Sistema',
-      email: 'tr364634@gmail.com',
-      role: 'administrador',
-      company: 'Sistema PDV Admin',
-      isActive: true,
-      isApproved: true,
-      lastLogin: '29/01/2026 23:00',
-      registrationDate: '01/01/2026'
-    },
-    {
-      id: 2,
-      name: 'Usuario Ativo 1',
-      email: 'usuario1@email.com',
-      role: 'dono',
-      company: 'Empresa Ativa 1',
-      isActive: true,
-      isApproved: true,
-      lastLogin: '28/01/2026 15:30',
-      registrationDate: '15/01/2026'
-    },
-    {
-      id: 3,
-      name: 'Usuario Inativo',
-      email: 'inativo@email.com',
-      role: 'funcionario',
-      company: 'Empresa Ativa 2',
-      isActive: false,
-      isApproved: true,
-      lastLogin: '10/01/2026 09:00',
-      registrationDate: '05/01/2026'
-    }
-  ]);
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      
+      const [
+        pendingUsersRes,
+        pendingCompaniesRes,
+        allUsersRes,
+        allCompaniesRes,
+        dashboardRes,
+        usageRes
+      ] = await Promise.all([
+        adminAPI.getPendingUsers(),
+        adminAPI.getPendingCompanies(),
+        adminAPI.getUsers(),
+        adminAPI.getCompanies(),
+        adminAPI.getDashboard(),
+        adminAPI.getUsage()
+      ]);
 
-  const [allCompanies, setAllCompanies] = useState([
-    {
-      id: 1,
-      companyName: 'Sistema PDV Admin',
-      ownerName: 'Administrador Sistema',
-      email: 'tr364634@gmail.com',
-      cnpj: '00000000000000',
-      isActive: true,
-      isApproved: true,
-      plan: 'enterprise',
-      registrationDate: '01/01/2026'
-    },
-    {
-      id: 2,
-      companyName: 'Empresa Ativa 1',
-      ownerName: 'Usuario Ativo 1',
-      email: 'contato@empresaativa1.com',
-      cnpj: '11111111000111',
-      isActive: true,
-      isApproved: true,
-      plan: 'premium',
-      registrationDate: '15/01/2026'
-    }
-  ]);
-
-  const [usageStats] = useState([
-    { userEmail: 'usuario1@email.com', loginCount: 45, lastAccess: '28/01/2026 15:30', avgSessionTime: '2h 15min' },
-    { userEmail: 'usuario2@email.com', loginCount: 32, lastAccess: '27/01/2026 10:20', avgSessionTime: '1h 45min' },
-    { userEmail: 'usuario3@email.com', loginCount: 28, lastAccess: '26/01/2026 14:10', avgSessionTime: '3h 05min' }
-  ]);
-
-  const approveUser = (userId) => {
-    setPendingUsers(pendingUsers.filter(user => user.id !== userId));
-    const user = pendingUsers.find(u => u.id === userId);
-    if (user) {
-      setAllUsers([...allUsers, { ...user, isActive: true, isApproved: true, lastLogin: null }]);
+      setPendingUsers(pendingUsersRes.data || []);
+      setPendingCompanies(pendingCompaniesRes.data || []);
+      setAllUsers(allUsersRes.data?.users || []);
+      setAllCompanies(allCompaniesRes.data?.companies || []);
+      setDashboardStats(dashboardRes.data || {});
+      setUsageStats(usageRes.data?.companyUsage || []);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toast.error('Erro ao carregar dados do painel');
+      
+      // Garantir que os estados permaneçam como arrays em caso de erro
+      setPendingUsers([]);
+      setPendingCompanies([]);
+      setAllUsers([]);
+      setAllCompanies([]);
+      setDashboardStats({});
+      setUsageStats([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const rejectUser = (userId) => {
-    setPendingUsers(pendingUsers.filter(user => user.id !== userId));
-  };
-
-  const approveCompany = (companyId) => {
-    setPendingCompanies(pendingCompanies.filter(company => company.id !== companyId));
-    const company = pendingCompanies.find(c => c.id === companyId);
-    if (company) {
-      setAllCompanies([...allCompanies, { ...company, isActive: true, isApproved: true, plan: 'basic' }]);
+  // Aprovações
+  const handleApproveUser = async (userId) => {
+    try {
+      await adminAPI.approveUser(userId);
+      toast.success('Usuário aprovado com sucesso!');
+      loadData(); // Recarregar dados
+    } catch (error) {
+      toast.error('Erro ao aprovar usuário');
     }
   };
 
-  const rejectCompany = (companyId) => {
-    setPendingCompanies(pendingCompanies.filter(company => company.id !== companyId));
+  const handleApproveCompany = async (companyId) => {
+    try {
+      await adminAPI.approveCompany(companyId);
+      toast.success('Empresa aprovada com sucesso!');
+      loadData(); // Recarregar dados
+    } catch (error) {
+      toast.error('Erro ao aprovar empresa');
+    }
   };
 
-  const toggleUserStatus = (userId) => {
-    setAllUsers(allUsers.map(user =>
-      user.id === userId ? { ...user, isActive: !user.isActive } : user
-    ));
+  const handleRejectUser = (userId) => {
+    setPendingUsers(pendingUsers.filter(user => user._id !== userId));
+    toast.info('Usuário rejeitado');
   };
 
-  const toggleCompanyStatus = (companyId) => {
-    setAllCompanies(allCompanies.map(company =>
-      company.id === companyId ? { ...company, isActive: !company.isActive } : company
-    ));
+  const handleRejectCompany = (companyId) => {
+    setPendingCompanies(pendingCompanies.filter(company => company._id !== companyId));
+    toast.info('Empresa rejeitada');
   };
 
-  const deleteUser = (userId) => {
-    setAllUsers(allUsers.filter(user => user.id !== userId));
+  // Funções para gestão de usuários (placeholder)
+  const handleChangeUserRole = (userId, newRole) => {
+    toast.info('Alteração de papel em desenvolvimento');
   };
 
-  const deleteCompany = (companyId) => {
-    setAllCompanies(allCompanies.filter(company => company.id !== companyId));
+  const handleToggleUserStatus = (userId) => {
+    toast.info('Alteração de status em desenvolvimento');
   };
 
-  const resetPassword = (userEmail) => {
-    alert(`Senha resetada para: ${userEmail}`);
+  const handleResetPassword = (userEmail) => {
+    toast.info('Reset de senha em desenvolvimento');
   };
 
-  const changeUserRole = (userId, newRole) => {
-    setAllUsers(allUsers.map(user =>
-      user.id === userId ? { ...user, role: newRole } : user
-    ));
+  const handleDeleteUser = (userId) => {
+    toast.info('Exclusão de usuário em desenvolvimento');
   };
 
-  const generateReport = (type) => {
-    alert(`Gerando relatório ${type}...`);
+  // Funções para gestão de empresas (placeholder)
+  const handleToggleCompanyStatus = (companyId) => {
+    toast.info('Alteração de status em desenvolvimento');
   };
 
-  const filteredPendingUsers = pendingUsers.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.company.toLowerCase().includes(searchTerm.toLowerCase())
+  const handleDeleteCompany = (companyId) => {
+    toast.info('Exclusão de empresa em desenvolvimento');
+  };
+
+  // Funções de filtro
+  const filteredPendingUsers = (pendingUsers || []).filter(user =>
+    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredPendingCompanies = pendingCompanies.filter(company =>
-    company.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    company.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    company.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredPendingCompanies = (pendingCompanies || []).filter(company =>
+    company.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    company.ownerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    company.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredAllUsers = allUsers.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.company.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAllUsers = (allUsers || []).filter(user =>
+    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.company?.companyName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredAllCompanies = allCompanies.filter(company =>
-    company.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    company.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    company.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAllCompanies = (allCompanies || []).filter(company =>
+    company.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    company.ownerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    company.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  // Renderização principal
   return (
     <div className="container-responsive">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Painel Administrativo</h1>
         <div className="flex gap-3">
           <button
-            onClick={() => generateReport('usuarios')}
+            onClick={() => toast.info('Relatório de usuários em desenvolvimento')}
             className="btn btn-secondary"
           >
             <Download className="w-4 h-4 mr-2" />
             Relatório de Usuários
           </button>
           <button
-            onClick={() => generateReport('empresas')}
+            onClick={() => toast.info('Relatório de empresas em desenvolvimento')}
             className="btn btn-secondary"
           >
             <Download className="w-4 h-4 mr-2" />
@@ -294,31 +256,31 @@ const Admin = () => {
               ) : (
                 <div className="space-y-4">
                   {filteredPendingUsers.map((user) => (
-                    <div key={user.id} className="border rounded-lg p-4">
+                    <div key={user._id} className="border rounded-lg p-4">
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <h4 className="font-medium">{user.name}</h4>
                           <p className="text-sm text-gray-500">{user.email}</p>
-                          <p className="text-sm text-gray-500">{user.company}</p>
+                          <p className="text-sm text-gray-500">{user.company?.companyName}</p>
                         </div>
                         <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs">
                           {user.role}
                         </span>
                       </div>
                       <div className="text-sm text-gray-500 mb-3">
-                        <p>CNPJ: {user.cnpj}</p>
-                        <p>Cadastro: {user.registrationDate}</p>
+                        <p>CNPJ: {user.company?.cnpj}</p>
+                        <p>Cadastro: {new Date(user.createdAt).toLocaleDateString('pt-BR')}</p>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => approveUser(user.id)}
+                          onClick={() => handleApproveUser(user._id)}
                           className="btn btn-success btn-sm"
                         >
                           <Check className="w-4 h-4 mr-1" />
                           Aprovar
                         </button>
                         <button
-                          onClick={() => rejectUser(user.id)}
+                          onClick={() => handleRejectUser(user._id)}
                           className="btn btn-error btn-sm"
                         >
                           <X className="w-4 h-4 mr-1" />
@@ -343,7 +305,7 @@ const Admin = () => {
               ) : (
                 <div className="space-y-4">
                   {filteredPendingCompanies.map((company) => (
-                    <div key={company.id} className="border rounded-lg p-4">
+                    <div key={company._id} className="border rounded-lg p-4">
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <h4 className="font-medium">{company.companyName}</h4>
@@ -356,19 +318,19 @@ const Admin = () => {
                       </div>
                       <div className="text-sm text-gray-500 mb-3">
                         <p>CNPJ: {company.cnpj}</p>
-                        <p>Telefone: {company.phone}</p>
-                        <p>Cadastro: {company.registrationDate}</p>
+                        <p>Telefone: {company.phone || 'Não informado'}</p>
+                        <p>Cadastro: {new Date(company.createdAt).toLocaleDateString('pt-BR')}</p>
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => approveCompany(company.id)}
+                          onClick={() => handleApproveCompany(company._id)}
                           className="btn btn-success btn-sm"
                         >
                           <Check className="w-4 h-4 mr-1" />
                           Aprovar
                         </button>
                         <button
-                          onClick={() => rejectCompany(company.id)}
+                          onClick={() => handleRejectCompany(company._id)}
                           className="btn btn-error btn-sm"
                         >
                           <X className="w-4 h-4 mr-1" />
@@ -408,14 +370,14 @@ const Admin = () => {
                   </thead>
                   <tbody>
                     {filteredAllUsers.map((user) => (
-                      <tr key={user.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4">{user.name}</td>
-                        <td className="py-3 px-4">{user.email}</td>
-                        <td className="py-3 px-4">{user.company}</td>
+                      <tr key={user._id} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4">{user.name || '-'}</td>
+                        <td className="py-3 px-4">{user.email || '-'}</td>
+                        <td className="py-3 px-4">{user.company?.companyName || '-'}</td>
                         <td className="py-3 px-4">
                           <select
                             value={user.role}
-                            onChange={(e) => changeUserRole(user.id, e.target.value)}
+                            onChange={(e) => handleChangeUserRole(user._id, e.target.value)}
                             className="input text-sm"
                           >
                             <option value="administrador">Administrador</option>
@@ -432,25 +394,27 @@ const Admin = () => {
                             {user.isActive ? 'Ativo' : 'Inativo'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm">{user.lastLogin || 'Nunca'}</td>
+                        <td className="py-3 px-4 text-sm">
+  {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('pt-BR') : 'Nunca'}
+</td>
                         <td className="py-3 px-4">
                           <div className="flex justify-center gap-2">
                             <button
-                              onClick={() => toggleUserStatus(user.id)}
+                              onClick={() => handleToggleUserStatus(user._id)}
                               className={`btn btn-sm ${user.isActive ? 'btn-warning' : 'btn-success'}`}
                               title={user.isActive ? 'Inativar' : 'Ativar'}
                             >
                               {user.isActive ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                             </button>
                             <button
-                              onClick={() => resetPassword(user.email)}
+                              onClick={() => handleResetPassword(user.email)}
                               className="btn btn-secondary btn-sm"
                               title="Resetar Senha"
                             >
                               <Key className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => deleteUser(user.id)}
+                              onClick={() => handleDeleteUser(user._id)}
                               className="btn btn-error btn-sm"
                               title="Excluir"
                             >
@@ -492,14 +456,14 @@ const Admin = () => {
                   </thead>
                   <tbody>
                     {filteredAllCompanies.map((company) => (
-                      <tr key={company.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4 font-medium">{company.companyName}</td>
-                        <td className="py-3 px-4">{company.ownerName}</td>
-                        <td className="py-3 px-4">{company.email}</td>
-                        <td className="py-3 px-4 text-sm">{company.cnpj}</td>
+                      <tr key={company._id} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4 font-medium">{company.companyName || '-'}</td>
+                        <td className="py-3 px-4">{company.ownerName || '-'}</td>
+                        <td className="py-3 px-4">{company.email || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{company.cnpj || '-'}</td>
                         <td className="py-3 px-4">
                           <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-sm">
-                            {company.plan}
+                            {company.plan || '-'}
                           </span>
                         </td>
                         <td className="py-3 px-4">
@@ -514,14 +478,14 @@ const Admin = () => {
                         <td className="py-3 px-4">
                           <div className="flex justify-center gap-2">
                             <button
-                              onClick={() => toggleCompanyStatus(company.id)}
+                              onClick={() => handleToggleCompanyStatus(company._id)}
                               className={`btn btn-sm ${company.isActive ? 'btn-warning' : 'btn-success'}`}
                               title={company.isActive ? 'Inativar' : 'Ativar'}
                             >
                               {company.isActive ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                             </button>
                             <button
-                              onClick={() => deleteCompany(company.id)}
+                              onClick={() => handleDeleteCompany(company._id)}
                               className="btn btn-error btn-sm"
                               title="Excluir"
                             >
@@ -545,28 +509,36 @@ const Admin = () => {
             <h3 className="card-title">Relatório de Uso do Sistema</h3>
           </div>
           <div className="card-content">
-            <div className="overflow-x-auto">
+            {usageStats.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">Nenhum dado de uso encontrado</p>
+            ) : (
+              <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4">Email do Usuário</th>
-                    <th className="text-center py-3 px-4">Total de Logins</th>
-                    <th className="text-left py-3 px-4">Último Acesso</th>
-                    <th className="text-left py-3 px-4">Tempo Médio de Sessão</th>
+                    <th className="text-left py-3 px-4">Empresa</th>
+                    <th className="text-center py-3 px-4">Total de Vendas</th>
+                    <th className="text-left py-3 px-4">Faturamento</th>
+                    <th className="text-left py-3 px-4">Ticket Médio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usageStats.map((stat, index) => (
-                    <tr key={index} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4">{stat.userEmail}</td>
-                      <td className="py-3 px-4 text-center">{stat.loginCount}</td>
-                      <td className="py-3 px-4">{stat.lastAccess}</td>
-                      <td className="py-3 px-4">{stat.avgSessionTime}</td>
+                    <tr key={stat._id || index} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium">{stat.companyName || '-'}</td>
+                      <td className="py-3 px-4 text-center">{stat.sales || 0}</td>
+                      <td className="py-3 px-4">
+                        {stat.total ? `R$ ${stat.total.toFixed(2)}` : 'R$ 0,00'}
+                      </td>
+                      <td className="py-3 px-4">
+                        {stat.sales && stat.total ? `R$ ${(stat.total / stat.sales).toFixed(2)}` : 'R$ 0,00'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
