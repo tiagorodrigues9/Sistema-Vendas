@@ -16,7 +16,6 @@ yarn-error.log*
 .env.production.local
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -100,8 +99,8 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
+
+
 .idea
 *.suo
 *.ntvs*
