@@ -1,0 +1,26 @@
+{
+  "short_name": "PDV",
+  "name": "Sistema PDV",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#3b82f6",
+  "background_color": "#ffffff",
+  "orientation": "portrait",
+  "categories": ["business", "productivity", "finance"],
+  "description": "Sistema de Ponto de Venda completo para gestão de vendas, estoque e clientes",
+  "lang": "pt-BR",
+  "scope": "/",
+  "splash_pages": null
+}
