@@ -1,93 +1,171 @@
-# Sistema PDV Completo
+# Sistema PDV - Ponto de Venda
 
-Sistema completo de Ponto de Venda (PDV) desenvolvido com Node.js, Express, React.js e MongoDB.
+Sistema completo de Ponto de Venda desenvolvido com Node.js/Express (backend) e React (frontend), com banco de dados MongoDB.
 
-## 🚀 Funcionalidades
+## 🚀 Tecnologias
 
-### 📋 Gestão de Vendas
-- Sistema de caixa completo
+### Backend
+- Node.js
+- Express.js
+- MongoDB com Mongoose
+- JWT para autenticação
+- bcryptjs para criptografia
+- Express Validator
+- Helmet, CORS, Rate Limiting
+
+### Frontend
+- React 18
+- React Router DOM
+- React Hook Form
+- React Query
+- Tailwind CSS
+- Lucide React (ícones)
+- React Hot Toast (notificações)
+- PWA capabilities
+
+## 📋 Funcionalidades
+
+### 🏢 Gestão de Empresas
+- Cadastro de empresas com CNPJ
+- Aprovação administrativa
+- Configurações de caixa
+
+### 👥 Gestão de Usuários
+- Três níveis de permissão:
+  - **Administrador**: Acesso total ao sistema e painel de controle
+  - **Dono**: Acesso a todas as funcionalidades exceto administração
+  - **Funcionário**: Acesso limitado a vendas e cadastro de clientes
+- Autenticação JWT
+- Perfis de usuário
+
+### 💰 Vendas (PDV)
+- Abertura/fechamento de caixa
+- Gestão de troco
+- Venda por código de barras ou pesquisa
 - Múltiplas formas de pagamento
-- Controle de troco
-- Emissão de comprovantes
-- Registro de vendas por data e período
+- Impressão de comprovante (térmica/A4)
+- Cancelamento de vendas
 
-### 👥 Gestão de Clientes
-- Cadastro de clientes (CPF/CNPJ)
+### 👥 Clientes
+- Cadastro com CPF/CNPJ automático
 - Endereço completo
 - Histórico de compras
-- Soft delete com recuperação
+- Lixeira para recuperação
 
-### 📦 Gestão de Produtos
+### 📦 Produtos
 - Cadastro com código de barras
 - Controle de estoque
-- Alertas de estoque baixo
-- Grupos e subgrupos
 - Preço de custo e venda
+- Grupos e subgrupos
+- Movimentação de estoque
+- Lixeira para recuperação
 
 ### 📥 Entrada de Produtos
 - Nota fiscal
 - Fornecedor
-- Justificativa de entrada
-- Atualização automática de estoque
+- Múltiplos itens por entrada
+- Ajuste automático de estoque
 
-### 📊 Dashboard e Relatórios
-- Vendas do mês/período
+### 📊 Dashboard
+- Vendas do mês
 - Produtos mais vendidos
-- Melhores clientes
-- Formas de pagamento
-- Exportação (Excel/PDF)
+- Clientes que mais compram
+- Relatórios exportáveis (Excel/PDF)
 
 ### 💳 Contas a Receber
-- Controle de pagamentos pendentes
-- Vencidos
-- Status de pagamento
+- Gestão de boletos, promissórias e parcelas
+- Controle de vencimentos
+- Baixa de pagamentos
 
-### ⚙️ Painel Administrativo
-- Aprovação de empresas
-- Gestão de usuários
-- Estatísticas do sistema
+### ⚙️ Administração
+- Aprovação de empresas e usuários
 - Relatórios de uso
+- Gestão do sistema
 
-## 🔐 Sistema de Permissões
+## 🛠️ Instalação
 
-### **Administrador**
-- Acesso a todas as telas
-- Painel administrativo
-- Gestão de empresas e usuários
-
-### **Dono**
-- Todas as funcionalidades exceto painel admin
-- Dashboard completo
-- Contas a receber
-
-### **Funcionário**
-- Realizar vendas
-- Cadastrar clientes
-- Acesso limitado ao sistema
-
-## 🛠️ Tecnologias
+### Pré-requisitos
+- Node.js 16+
+- MongoDB
+- Git
 
 ### Backend
-- **Node.js** - Runtime JavaScript
-- **Express.js** - Framework web
-- **MongoDB** - Banco de dados NoSQL
-- **Mongoose** - ODM para MongoDB
-- **JWT** - Autenticação
-- **bcryptjs** - Hash de senhas
+
+1. Clone o repositório:
+```bash
+git clone <repository-url>
+cd sistemaPDV
+```
+
+2. Instale as dependências do backend:
+```bash
+cd api
+npm install
+```
+
+3. Configure as variáveis de ambiente:
+```bash
+cp .env.example .env
+```
+
+Edite o arquivo `.env` com suas configurações:
+```env
+MONGODB_URI=mongodb://localhost:27017/sistema-pdv
+PORT=5000
+NODE_ENV=development
+JWT_SECRET=sua_chave_secreta_aqui
+JWT_EXPIRE=7d
+FRONTEND_URL=http://localhost:3000
+```
+
+4. Inicie o backend:
+```bash
+npm run dev
+```
 
 ### Frontend
-- **React.js** - Biblioteca UI
-- **React Router** - Navegação
-- **Axios** - Cliente HTTP
-- **React Hook Form** - Formulários
-- **Lucide React** - Ícones
-- **React Hot Toast** - Notificações
 
-### PWA
-- Service Worker
-- Manifest.json
-- Suporte offline
-- Instalação em dispositivos
+1. Instale as dependências do frontend:
+```bash
+cd ../frontend
+npm install
+```
+
+2. Configure as variáveis de ambiente:
+```bash
+echo "REACT_APP_API_URL=http://localhost:5000/api" > .env
+```
+
+3. Inicie o frontend:
+```bash
+npm start
+```
+
+## 🌐 Deploy
+
+### Backend (Vercel)
+1. Configure as variáveis de ambiente no Vercel
+2. Faça o deploy da pasta `api`
+
+### Frontend (Render)
+1. Configure as variáveis de ambiente no Render
+2. Faça o deploy da pasta `frontend`
+
+## 📱 PWA
+
+O sistema é uma Progressive Web App (PWA):
+- Instalável em dispositivos móveis
+- Funciona offline (cache básico)
+- Notificações push (configurável)
+
+## 🔐 Segurança
+
+- Senhas criptografadas com bcrypt
+- Tokens JWT com expiração
+- Rate limiting
+- Helmet para segurança de headers
+- Validação de entrada
+- CORS configurado
 
 ## 📁 Estrutura do Projeto
 
@@ -97,158 +175,56 @@ sistemaPDV/
 │   ├── models/            # Modelos MongoDB
 │   ├── routes/            # Rotas da API
 │   ├── middleware/        # Middlewares
-│   ├── utils/             # Utilitários
-│   ├── server.js          # Servidor Express
-│   └── package.json
+│   ├── controllers/       # Controladores
+│   ├── utils/            # Utilitários
+│   └── server.js         # Servidor principal
 ├── frontend/              # Frontend React
 │   ├── src/
 │   │   ├── components/    # Componentes React
-│   │   ├── pages/         # Páginas
-│   │   ├── contexts/      # Contextos
-│   │   ├── services/      # Serviços API
-│   │   └── utils/         # Utilitários
-│   ├── public/            # Arquivos estáticos
-│   └── package.json
+│   │   ├── pages/        # Páginas
+│   │   ├── contexts/     # Contextos React
+│   │   ├── services/     # Serviços API
+│   │   ├── utils/        # Utilitários
+│   │   └── styles/       # Estilos
+│   └── public/           # Arquivos estáticos
 └── README.md
 ```
 
-## 🚀 Instalação e Execução
+## 🎯 Fluxo de Uso
 
-### Pré-requisitos
-- Node.js 16+
-- MongoDB
-- Git
-
-### 1. Clonar o repositório
-```bash
-git clone <repository-url>
-cd sistemaPDV
-```
-
-### 2. Instalar dependências
-```bash
-npm run install-all
-```
-
-### 3. Configurar variáveis de ambiente
-
-#### Backend (api/.env)
-```
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/sistema-pdv
-JWT_SECRET=your_jwt_secret_key_here_change_in_production
-JWT_EXPIRE=7d
-NODE_ENV=development
-```
-
-#### Frontend (frontend/.env)
-```
-REACT_APP_API_URL=http://localhost:5000/api
-```
-
-### 4. Iniciar o MongoDB
-```bash
-mongod
-```
-
-### 5. Executar em modo desenvolvimento
-```bash
-npm run dev
-```
-
-Isso iniciará:
-- Backend: http://localhost:5000
-- Frontend: http://localhost:3000
-
-## 🚀 Deploy
-
-### Backend no Vercel
-```bash
-cd api
-npm i -g vercel
-vercel --prod
-```
-
-Configure as variáveis de ambiente no painel Vercel:
-- `MONGODB_URI`
-- `JWT_SECRET`
-- `NODE_ENV=production`
-
-### Frontend no Render
-1. Conecte o repositório ao Render
-2. Configure:
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `serve -s build -l 3000`
-   - **Publish Directory**: `build`
-
-### Frontend na Vercel (Alternativa)
-```bash
-cd frontend
-vercel --prod
-```
-
-## 📱 PWA - Progressive Web App
-
-O sistema é uma PWA completa:
-- ✅ Funciona offline
-- ✅ Instalável em dispositivos móveis
-- ✅ Notificações push
-- ✅ Performance otimizada
-
-## 🔧 Desenvolvimento
-
-### Scripts Úteis
-```bash
-# Instalar todas as dependências
-npm run install-all
-
-# Iniciar apenas o backend
-npm run server
-
-# Iniciar apenas o frontend
-npm run client
-
-# Build de produção
-cd frontend && npm run build
-```
-
-### Criar Usuário Admin
-```javascript
-// No MongoDB
-use sistema-pdv
-db.users.insertOne({
-  name: "Admin",
-  email: "admin@admin.com",
-  password: "$2a$10$...", // Hash da senha "admin123"
-  role: "admin",
-  company: null,
-  permissions: {
-    canViewDashboard: true,
-    canManageCustomers: true,
-    canManageProducts: true,
-    canMakeSales: true,
-    canManageEntries: true,
-    canViewReports: true,
-    canManageReceivables: true,
-    canAccessAdmin: true
-  },
-  isActive: true
-})
-```
-
-## 📄 Licença
-
-MIT License
+1. **Cadastro**: Empresa faz cadastro e aguarda aprovação
+2. **Aprovação**: Administrador aprova empresa e usuários
+3. **Configuração**: Dono cadastra produtos e clientes
+4. **Operação**: Funcionários realizam vendas
+5. **Gestão**: Dono acessa relatórios e administração
+6. **Controle**: Administrador gerencia todo o sistema
 
 ## 🤝 Contribuição
 
-Contribuições são bem-vindas! Por favor:
 1. Fork o projeto
-2. Crie uma branch (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
+2. Crie uma branch (`git checkout -b feature/nova-funcionalidade`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
+4. Push para a branch (`git push origin feature/nova-funcionalidade`)
 5. Abra um Pull Request
 
-## 📞 Suporte
+## 📝 Licença
 
-Para suporte, envie um email para [seu-email@dominio.com] ou abra uma issue no GitHub.
+Este projeto está licenciado sob a Licença MIT.
+
+## 🆘 Suporte
+
+Para suporte, envie um e-mail para [seu-email@dominio.com] ou abra uma issue no GitHub.
+
+---
+
+## 🚀 Próximos Passos
+
+Para continuar o desenvolvimento:
+
+1. **Implementar telas restantes**: Clientes, Produtos, Entradas, Dashboard, Contas a Receber, Admin
+2. **Configurar PWA**: Service worker, manifest.json
+3. **Testes**: Unitários e de integração
+4. **Documentação**: API docs com Swagger
+5. **Melhorias**: Performance, UI/UX, novas funcionalidades
+
+O sistema está estruturado e pronto para desenvolvimento das telas restantes!

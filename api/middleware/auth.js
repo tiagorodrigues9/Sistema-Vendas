@@ -1,55 +1,83 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Company = require('../models/Company');
 
 const auth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (!token) {
-      return res.status(401).json({ message: 'Access denied. No token provided.' });
+      return res.status(401).json({ message: 'Acesso negado. Token não fornecido.' });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id).populate('company');
     
-    if (!user || !user.isActive) {
-      return res.status(401).json({ message: 'Invalid token or user inactive.' });
+    if (!user) {
+      return res.status(401).json({ message: 'Token inválido. Usuário não encontrado.' });
     }
 
-    if (user.company.status !== 'approved') {
-      return res.status(401).json({ message: 'Company not approved.' });
+    if (!user.isActive) {
+      return res.status(401).json({ message: 'Usuário inativo.' });
+    }
+
+    if (!user.isApproved && user.role !== 'administrador') {
+      return res.status(401).json({ message: 'Usuário não aprovado.' });
+    }
+
+    const company = await Company.findById(user.company._id);
+    if (!company.isActive) {
+      return res.status(401).json({ message: 'Empresa inativa.' });
+    }
+
+    if (!company.isApproved && user.role !== 'administrador') {
+      return res.status(401).json({ message: 'Empresa não aprovada.' });
     }
 
     req.user = user;
+    req.company = company;
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Invalid token.' });
+    console.error('Erro de autenticação:', error);
+    res.status(401).json({ message: 'Token inválido.' });
   }
 };
 
-const authorize = (...permissions) => {
+const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ message: 'Access denied.' });
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        message: 'Acesso negado. Permissão insuficiente.' 
+      });
     }
-
-    const hasPermission = permissions.every(permission => 
-      req.user.permissions[permission]
-    );
-
-    if (!hasPermission) {
-      return res.status(403).json({ message: 'Insufficient permissions.' });
-    }
-
     next();
   };
 };
 
-const adminOnly = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin access required.' });
+const authorizeOwnerOrAdmin = (req, res, next) => {
+  if (req.user.role === 'administrador' || req.user.role === 'dono') {
+    return next();
   }
-  next();
+  return res.status(403).json({ 
+    message: 'Acesso negado. Permissão insuficiente.' 
+  });
 };
 
-module.exports = { auth, authorize, adminOnly };
+const authorizeSelfOrAdmin = (req, res, next) => {
+  const targetUserId = req.params.id || req.params.userId;
+  
+  if (req.user.role === 'administrador' || req.user._id.toString() === targetUserId) {
+    return next();
+  }
+  
+  return res.status(403).json({ 
+    message: 'Acesso negado. Você só pode acessar seus próprios dados.' 
+  });
+};
+
+module.exports = {
+  auth,
+  authorize,
+  authorizeOwnerOrAdmin,
+  authorizeSelfOrAdmin
+};

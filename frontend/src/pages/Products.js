@@ -1,459 +1,329 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Package, Plus, Search, Edit, Trash2, RotateCcw, TrendingUp, AlertCircle, CheckCircle, BarChart3 } from 'lucide-react';
-import { useForm } from 'react-hook-form';
-import api from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
-import toast from 'react-hot-toast';
+import React, { useState } from 'react';
+import { Plus, Search, Edit2, Trash2, Package, BarChart3, Download, Check, PlusCircle } from 'lucide-react';
 
 const Products = () => {
-  const [products, setProducts] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [showStockForm, setShowStockForm] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [showStockModal, setShowStockModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [stockProduct, setStockProduct] = useState(null);
-  const [search, setSearch] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState('');
-  const [showDeleted, setShowDeleted] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState({
+    barcode: '',
+    description: '',
+    brand: '',
+    group: '',
+    subgroup: '',
+    quantity: 0,
+    unit: 'UND',
+    costPrice: 0,
+    salePrice: 0
+  });
+  const [stockData, setStockData] = useState({
+    quantity: 0,
+    justification: ''
+  });
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
-  const { register: registerStock, handleSubmit: handleStockSubmit, formState: { errors: stockErrors } } = useForm();
-
-  const loadProducts = useCallback(async () => {
-    try {
-      const response = await api.get('/products', {
-        params: { search, group: selectedGroup, deleted: showDeleted }
-      });
-      setProducts(response.data.products);
-    } catch (error) {
-      toast.error('Erro ao carregar produtos');
-    } finally {
-      setLoading(false);
+  const [products, setProducts] = useState([
+    {
+      id: 1,
+      barcode: '7891234567890',
+      description: 'Produto Exemplo 1',
+      brand: 'Marca A',
+      group: 'Alimentos',
+      subgroup: 'Bebidas',
+      quantity: 50,
+      unit: 'UND',
+      costPrice: 8.50,
+      salePrice: 10.99,
+      isDeleted: false
+    },
+    {
+      id: 2,
+      barcode: '7891234567891',
+      description: 'Produto Exemplo 2',
+      brand: 'Marca B',
+      group: 'Limpeza',
+      subgroup: 'Detergentes',
+      quantity: 30,
+      unit: 'LT',
+      costPrice: 18.00,
+      salePrice: 25.50,
+      isDeleted: false
     }
-  }, [search, selectedGroup, showDeleted]);
+  ]);
 
-  const loadGroups = async () => {
-    try {
-      const response = await api.get('/products/groups/list');
-      setGroups(response.data);
-    } catch (error) {
-      console.error('Error loading groups:', error);
+  const [deletedProducts, setDeletedProducts] = useState([
+    {
+      id: 3,
+      barcode: '7891234567892',
+      description: 'Produto Antigo',
+      brand: 'Marca C',
+      group: 'Papelaria',
+      subgroup: 'Cadernos',
+      quantity: 0,
+      unit: 'UND',
+      costPrice: 5.00,
+      salePrice: 7.50,
+      isDeleted: true
     }
+  ]);
+
+  const filteredProducts = products.filter(product =>
+    !product.isDeleted &&
+    (product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     product.barcode.includes(searchTerm) ||
+     product.brand.toLowerCase().includes(searchTerm))
+  );
+
+  const filteredDeletedProducts = deletedProducts.filter(product =>
+    product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.barcode.includes(searchTerm) ||
+    product.brand.toLowerCase().includes(searchTerm)
+  );
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingProduct) {
+      setProducts(products.map(product =>
+        product.id === editingProduct.id
+          ? { ...product, ...formData }
+          : product
+      ));
+    } else {
+      const newProduct = {
+        id: Date.now(),
+        ...formData,
+        isDeleted: false
+      };
+      setProducts([...products, newProduct]);
+    }
+    resetForm();
   };
 
-  useEffect(() => {
-    loadProducts();
-    loadGroups();
-  }, [loadProducts]);
-
-  const onSubmit = async (data) => {
-    try {
-      if (editingProduct) {
-        await api.put(`/products/${editingProduct._id}`, data);
-        toast.success('Produto atualizado com sucesso!');
-      } else {
-        await api.post('/products', data);
-        toast.success('Produto criado com sucesso!');
-      }
-      setShowForm(false);
-      setEditingProduct(null);
-      reset();
-      loadProducts();
-    } catch (error) {
-      toast.error('Erro ao salvar produto');
-    }
-  };
-
-  const onStockSubmit = async (data) => {
-    try {
-      await api.post(`/products/${stockProduct._id}/stock`, data);
-      toast.success('Estoque adicionado com sucesso!');
-      setShowStockForm(false);
-      setStockProduct(null);
-      loadProducts();
-    } catch (error) {
-      toast.error('Erro ao adicionar estoque');
-    }
-  };
-
-  const deleteProduct = async (id) => {
-    if (!window.confirm('Tem certeza que deseja excluir este produto?')) return;
-    
-    try {
-      await api.delete(`/products/${id}`);
-      toast.success('Produto excluído com sucesso!');
-      loadProducts();
-    } catch (error) {
-      toast.error('Erro ao excluir produto');
-    }
-  };
-
-  const restoreProduct = async (id) => {
-    try {
-      await api.put(`/products/${id}/restore`);
-      toast.success('Produto restaurado com sucesso!');
-      loadProducts();
-    } catch (error) {
-      toast.error('Erro ao restaurar produto');
-    }
+  const resetForm = () => {
+    setFormData({
+      barcode: '',
+      description: '',
+      brand: '',
+      group: '',
+      subgroup: '',
+      quantity: 0,
+      unit: 'UND',
+      costPrice: 0,
+      salePrice: 0
+    });
+    setShowForm(false);
+    setEditingProduct(null);
   };
 
   const editProduct = (product) => {
     setEditingProduct(product);
-    reset(product);
+    setFormData({
+      barcode: product.barcode,
+      description: product.description,
+      brand: product.brand,
+      group: product.group,
+      subgroup: product.subgroup,
+      quantity: product.quantity,
+      unit: product.unit,
+      costPrice: product.costPrice,
+      salePrice: product.salePrice
+    });
     setShowForm(true);
   };
 
-  const addStock = (product) => {
-    setStockProduct(product);
-    setShowStockForm(true);
+  const deleteProduct = (product) => {
+    setProducts(products.filter(p => p.id !== product.id));
+    setDeletedProducts([...deletedProducts, { ...product, isDeleted: true }]);
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value || 0);
+  const restoreProduct = (product) => {
+    setDeletedProducts(deletedProducts.filter(p => p.id !== product.id));
+    setProducts([...products, { ...product, isDeleted: false }]);
   };
 
-  const getStockStatus = (product) => {
-    if (product.quantity <= product.minQuantity) {
-      return { status: 'critical', color: 'text-red-600 bg-red-50', icon: AlertCircle };
-    } else if (product.quantity <= product.minQuantity * 1.5) {
-      return { status: 'low', color: 'text-yellow-600 bg-yellow-50', icon: AlertCircle };
-    } else {
-      return { status: 'good', color: 'text-green-600 bg-green-50', icon: CheckCircle };
+  const permanentDelete = (product) => {
+    setDeletedProducts(deletedProducts.filter(p => p.id !== product.id));
+  };
+
+  const openStockModal = (product) => {
+    setSelectedProduct(product);
+    setStockData({ quantity: 0, justification: '' });
+    setShowStockModal(true);
+  };
+
+  const handleStockAdjustment = (type) => {
+    if (selectedProduct && stockData.quantity !== 0 && stockData.justification) {
+      const adjustment = type === 'add' ? stockData.quantity : -stockData.quantity;
+      setProducts(products.map(product =>
+        product.id === selectedProduct.id
+          ? { ...product, quantity: product.quantity + adjustment }
+          : product
+      ));
+      setShowStockModal(false);
+      setSelectedProduct(null);
+      setStockData({ quantity: 0, justification: '' });
     }
   };
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
+  const generateReport = (type) => {
+    alert(`Gerando relatório ${type} de produtos...`);
+  };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Produtos</h1>
-          <p className="text-gray-600">Gerencie seu catálogo de produtos</p>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="btn btn-primary shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
-        >
-          <Plus className="w-5 h-5" />
-          Novo Produto
-        </button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total de Produtos</p>
-              <p className="text-2xl font-bold text-gray-900">{products.length}</p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-              <Package className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Estoque Baixo</p>
-              <p className="text-2xl font-bold text-red-600">
-                {products.filter(p => p.quantity <= p.minQuantity).length}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Grupos</p>
-              <p className="text-2xl font-bold text-gray-900">{groups.length}</p>
-            </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-              <BarChart3 className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Valor Total</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(products.reduce((sum, p) => sum + (p.price * p.quantity), 0))}
-              </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Buscar produtos..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="form-input pl-10 h-12"
-              />
-            </div>
-          </div>
-          
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="form-input h-12 min-w-48"
-          >
-            <option value="">Todos os grupos</option>
-            {groups.map(group => (
-              <option key={group} value={group}>{group}</option>
-            ))}
-          </select>
-
+    <div className="container-responsive">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Produtos</h1>
+        <div className="flex gap-3">
           <button
-            onClick={() => setShowDeleted(!showDeleted)}
-            className={`btn h-12 ${showDeleted ? 'btn-danger' : 'btn-outline'}`}
+            onClick={() => generateReport('cadastro')}
+            className="btn btn-secondary"
           >
-            <Trash2 className="w-5 h-5" />
-            {showDeleted ? 'Ocultar' : 'Mostrar'} Excluídos
+            <Download className="w-4 h-4 mr-2" />
+            Relatório
           </button>
-        </div>
-      </div>
-
-      {/* Products Table */}
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Grupo</th>
-                <th>Preço</th>
-                <th>Estoque</th>
-                <th>Status</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((product) => {
-                const stockStatus = getStockStatus(product);
-                const StatusIcon = stockStatus.icon;
-                
-                return (
-                  <tr key={product._id} className="hover:bg-gray-50 transition-colors">
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-semibold">
-                          {product.description?.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">{product.description}</p>
-                          <p className="text-sm text-gray-500">{product.code}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">
-                        {product.group || 'Sem grupo'}
-                      </span>
-                    </td>
-                    <td>
-                      <p className="font-semibold text-gray-900">{formatCurrency(product.price)}</p>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900">{product.quantity}</span>
-                        <span className="text-sm text-gray-500">{product.unit}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${stockStatus.color}`}>
-                        <StatusIcon className="w-4 h-4" />
-                        {stockStatus.status === 'critical' ? 'Crítico' : 
-                         stockStatus.status === 'low' ? 'Baixo' : 'Normal'}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => editProduct(product)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => addStock(product)}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title="Adicionar Estoque"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                        {product.deleted ? (
-                          <button
-                            onClick={() => restoreProduct(product._id)}
-                            className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                            title="Restaurar"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => deleteProduct(product._id)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          
-          {products.length === 0 && (
-            <div className="text-center py-12">
-              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 text-lg font-medium">Nenhum produto encontrado</p>
-              <p className="text-gray-400">Tente ajustar os filtros ou adicionar um novo produto</p>
-            </div>
+          <button
+            onClick={() => setShowTrash(!showTrash)}
+            className={`btn ${showTrash ? 'btn-warning' : 'btn-secondary'}`}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            {showTrash ? 'Ver Ativos' : 'Lixeira'}
+          </button>
+          {!showTrash && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="btn btn-primary"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Cadastrar Produto
+            </button>
           )}
         </div>
       </div>
 
-      {/* Product Form Modal */}
+      {/* Formulário de Cadastro/Edição */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-2xl font-bold text-gray-900">
-                {editingProduct ? 'Editar Produto' : 'Novo Produto'}
-              </h2>
-            </div>
-            
-            <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="card mb-6">
+          <div className="card-header">
+            <h3 className="card-title">
+              {editingProduct ? 'Editar Produto' : 'Cadastrar Novo Produto'}
+            </h3>
+          </div>
+          <div className="card-content">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="form-label">Código</label>
+                  <label className="block text-sm font-medium mb-1">Código de Barras</label>
                   <input
-                    {...register('code', { required: 'Código é obrigatório' })}
-                    className="form-input"
-                    placeholder="EX: 001"
-                  />
-                  {errors.code && <p className="form-error">{errors.code.message}</p>}
-                </div>
-
-                <div>
-                  <label className="form-label">Descrição</label>
-                  <input
-                    {...register('description', { required: 'Descrição é obrigatória' })}
-                    className="form-input"
-                    placeholder="Nome do produto"
-                  />
-                  {errors.description && <p className="form-error">{errors.description.message}</p>}
-                </div>
-
-                <div>
-                  <label className="form-label">Grupo</label>
-                  <input
-                    {...register('group')}
-                    className="form-input"
-                    placeholder="Categoria do produto"
+                    type="text"
+                    value={formData.barcode}
+                    onChange={(e) => setFormData({...formData, barcode: e.target.value})}
+                    className="input"
+                    placeholder="Opcional"
                   />
                 </div>
-
-                <div>
-                  <label className="form-label">Unidade</label>
-                  <select {...register('unit')} className="form-input">
-                    <option value="UN">Unidade</option>
-                    <option value="KG">Quilograma</option>
-                    <option value="LT">Litro</option>
-                    <option value="CX">Caixa</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="form-label">Preço de Venda</label>
+                <div className="lg:col-span-2">
+                  <label className="block text-sm font-medium mb-1">Descrição *</label>
                   <input
-                    {...register('price', { required: 'Preço é obrigatório' })}
+                    type="text"
+                    required
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    className="input"
+                    placeholder="Descrição do produto"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Marca *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.brand}
+                    onChange={(e) => setFormData({...formData, brand: e.target.value})}
+                    className="input"
+                    placeholder="Marca do produto"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Grupo *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.group}
+                    onChange={(e) => setFormData({...formData, group: e.target.value})}
+                    className="input"
+                    placeholder="Grupo do produto"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Subgrupo</label>
+                  <input
+                    type="text"
+                    value={formData.subgroup}
+                    onChange={(e) => setFormData({...formData, subgroup: e.target.value})}
+                    className="input"
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Quantidade *</label>
+                  <input
                     type="number"
-                    step="0.01"
-                    className="form-input"
-                    placeholder="0.00"
-                  />
-                  {errors.price && <p className="form-error">{errors.price.message}</p>}
-                </div>
-
-                <div>
-                  <label className="form-label">Custo</label>
-                  <input
-                    {...register('cost')}
-                    type="number"
-                    step="0.01"
-                    className="form-input"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Quantidade Mínima</label>
-                  <input
-                    {...register('minQuantity', { required: 'Quantidade mínima é obrigatória' })}
-                    type="number"
-                    className="form-input"
-                    placeholder="10"
-                  />
-                  {errors.minQuantity && <p className="form-error">{errors.minQuantity.message}</p>}
-                </div>
-
-                <div>
-                  <label className="form-label">Quantidade Inicial</label>
-                  <input
-                    {...register('quantity')}
-                    type="number"
-                    className="form-input"
+                    required
+                    min="0"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value)})}
+                    className="input"
                     placeholder="0"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Unidade *</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
+                    className="input"
+                  >
+                    <option value="UND">UND</option>
+                    <option value="KG">KG</option>
+                    <option value="PCT">PCT</option>
+                    <option value="LT">LT</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Preço de Custo *</label>
+                  <input
+                    type="number"
+                    required
+                    step="0.01"
+                    min="0"
+                    value={formData.costPrice}
+                    onChange={(e) => setFormData({...formData, costPrice: parseFloat(e.target.value)})}
+                    className="input"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Preço de Venda *</label>
+                  <input
+                    type="number"
+                    required
+                    step="0.01"
+                    min="0"
+                    value={formData.salePrice}
+                    onChange={(e) => setFormData({...formData, salePrice: parseFloat(e.target.value)})}
+                    className="input"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
-
-              <div className="flex gap-4 pt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForm(false);
-                    setEditingProduct(null);
-                    reset();
-                  }}
-                  className="btn btn-outline flex-1"
-                >
-                  Cancelar
+              <div className="flex gap-3">
+                <button type="submit" className="btn btn-primary">
+                  {editingProduct ? 'Atualizar' : 'Cadastrar'}
                 </button>
-                <button type="submit" className="btn btn-primary flex-1">
-                  {editingProduct ? 'Atualizar' : 'Cadastrar'} Produto
+                <button type="button" onClick={resetForm} className="btn btn-secondary">
+                  Cancelar
                 </button>
               </div>
             </form>
@@ -461,53 +331,206 @@ const Products = () => {
         </div>
       )}
 
-      {/* Stock Form Modal */}
-      {showStockForm && stockProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-2xl font-bold text-gray-900">Adicionar Estoque</h2>
-              <p className="text-gray-600 mt-1">{stockProduct.description}</p>
+      {/* Campo de Busca */}
+      <div className="card mb-6">
+        <div className="card-content">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Buscar por descrição, código ou marca..."
+              className="input pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de Produtos */}
+      <div className="card">
+        <div className="card-header">
+          <h3 className="card-title">
+            {showTrash ? 'Produtos na Lixeira' : 'Produtos Ativos'}
+          </h3>
+        </div>
+        <div className="card-content">
+          {!showTrash && filteredProducts.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">Nenhum produto encontrado</p>
+          ) : showTrash && filteredDeletedProducts.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">Nenhum produto na lixeira</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4">Código</th>
+                    <th className="text-left py-3 px-4">Descrição</th>
+                    <th className="text-left py-3 px-4">Marca</th>
+                    <th className="text-left py-3 px-4">Grupo</th>
+                    <th className="text-center py-3 px-4">Qtd</th>
+                    <th className="text-left py-3 px-4">Un</th>
+                    <th className="text-right py-3 px-4">Preço Custo</th>
+                    <th className="text-right py-3 px-4">Preço Venda</th>
+                    <th className="text-center py-3 px-4">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!showTrash && filteredProducts.map((product) => (
+                    <tr key={product.id} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm">{product.barcode || '-'}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center">
+                          <Package className="w-4 h-4 mr-2 text-gray-400" />
+                          {product.description}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">{product.brand}</td>
+                      <td className="py-3 px-4">
+                        <div>
+                          <div>{product.group}</div>
+                          {product.subgroup && <div className="text-xs text-gray-500">{product.subgroup}</div>}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`font-medium ${product.quantity <= 10 ? 'text-red-600' : 'text-green-600'}`}>
+                          {product.quantity}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">{product.unit}</td>
+                      <td className="py-3 px-4 text-right">R$ {product.costPrice.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-medium">R$ {product.salePrice.toFixed(2)}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex justify-center gap-1">
+                          <button
+                            onClick={() => editProduct(product)}
+                            className="btn btn-primary btn-sm"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openStockModal(product)}
+                            className="btn btn-success btn-sm"
+                            title="Incluir Estoque"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteProduct(product)}
+                            className="btn btn-error btn-sm"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {showTrash && filteredDeletedProducts.map((product) => (
+                    <tr key={product.id} className="border-b bg-red-50">
+                      <td className="py-3 px-4 text-sm">{product.barcode || '-'}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center">
+                          <Package className="w-4 h-4 mr-2 text-gray-400" />
+                          {product.description}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">{product.brand}</td>
+                      <td className="py-3 px-4">
+                        <div>
+                          <div>{product.group}</div>
+                          {product.subgroup && <div className="text-xs text-gray-500">{product.subgroup}</div>}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center text-red-600">{product.quantity}</td>
+                      <td className="py-3 px-4 text-center">{product.unit}</td>
+                      <td className="py-3 px-4 text-right">R$ {product.costPrice.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right">R$ {product.salePrice.toFixed(2)}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex justify-center gap-1">
+                          <button
+                            onClick={() => restoreProduct(product)}
+                            className="btn btn-success btn-sm"
+                            title="Restaurar"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => permanentDelete(product)}
+                            className="btn btn-error btn-sm"
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            
-            <form onSubmit={handleStockSubmit(onStockSubmit)} className="p-6 space-y-6">
-              <div>
-                <label className="form-label">Quantidade</label>
-                <input
-                  {...registerStock('quantity', { required: 'Quantidade é obrigatória' })}
-                  type="number"
-                  className="form-input"
-                  placeholder="0"
-                />
-                {stockErrors.quantity && <p className="form-error">{stockErrors.quantity.message}</p>}
-              </div>
+          )}
+        </div>
+      </div>
 
-              <div>
-                <label className="form-label">Motivo</label>
-                <textarea
-                  {...registerStock('justification')}
-                  className="form-input"
-                  rows={3}
-                  placeholder="Motivo da entrada de estoque"
-                />
+      {/* Modal de Ajuste de Estoque */}
+      {showStockModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-4">Ajustar Estoque</h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">
+                Produto: <strong>{selectedProduct.description}</strong>
+              </p>
+              <p className="text-sm text-gray-600 mb-4">
+                Estoque atual: <strong>{selectedProduct.quantity} {selectedProduct.unit}</strong>
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Quantidade</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={stockData.quantity}
+                    onChange={(e) => setStockData({...stockData, quantity: parseInt(e.target.value)})}
+                    className="input w-full"
+                    placeholder="Quantidade para ajustar"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Justificativa *</label>
+                  <textarea
+                    required
+                    value={stockData.justification}
+                    onChange={(e) => setStockData({...stockData, justification: e.target.value})}
+                    className="input w-full"
+                    rows="3"
+                    placeholder="Motivo do ajuste de estoque"
+                  />
+                </div>
               </div>
-
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowStockForm(false);
-                    setStockProduct(null);
-                  }}
-                  className="btn btn-outline flex-1"
-                >
-                  Cancelar
-                </button>
-                <button type="submit" className="btn btn-primary flex-1">
-                  Adicionar Estoque
-                </button>
-              </div>
-            </form>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleStockAdjustment('add')}
+                className="btn btn-success flex-1"
+              >
+                Adicionar
+              </button>
+              <button
+                onClick={() => handleStockAdjustment('remove')}
+                className="btn btn-warning flex-1"
+              >
+                Retirar
+              </button>
+              <button
+                onClick={() => setShowStockModal(false)}
+                className="btn btn-secondary flex-1"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

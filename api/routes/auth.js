@@ -1,47 +1,32 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Company = require('../models/Company');
+const { generateToken } = require('../utils/jwt');
+const { validateRegister, validateLogin } = require('../middleware/validation');
 const { auth } = require('../middleware/auth');
-const { validateCPF, validateCNPJ, getDocumentType } = require('../utils/helpers');
-
 const router = express.Router();
 
-// Register company and user
-router.post('/register', [
-  body('cnpj').custom(value => {
-    if (!validateCNPJ(value)) {
-      throw new Error('CNPJ inválido');
-    }
-    return true;
-  }),
-  body('companyName').notEmpty().withMessage('Nome da empresa é obrigatório'),
-  body('ownerName').notEmpty().withMessage('Nome do proprietário é obrigatório'),
-  body('email').isEmail().withMessage('Email inválido'),
-  body('password').isLength({ min: 6 }).withMessage('Senha deve ter no mínimo 6 caracteres')
-], async (req, res) => {
+router.post('/register', validateRegister, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
     const { cnpj, companyName, ownerName, email, password } = req.body;
 
-    // Check if company already exists
-    const existingCompany = await Company.findOne({ cnpj });
+    const existingCompany = await Company.findOne({ 
+      $or: [{ cnpj }, { email }] 
+    });
+    
     if (existingCompany) {
-      return res.status(400).json({ message: 'CNPJ já cadastrado' });
+      return res.status(400).json({ 
+        message: 'CNPJ ou e-mail já cadastrado' 
+      });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'Email já cadastrado' });
+      return res.status(400).json({ 
+        message: 'E-mail já cadastrado' 
+      });
     }
 
-    // Create company
     const company = new Company({
       cnpj,
       companyName,
@@ -51,77 +36,78 @@ router.post('/register', [
 
     await company.save();
 
-    // Create user (owner)
     const user = new User({
       name: ownerName,
       email,
       password,
-      role: 'owner',
+      role: 'dono',
       company: company._id
     });
 
     await user.save();
 
     res.status(201).json({
-      message: 'Cadastro realizado com sucesso! Aguarde a aprovação do administrador.',
+      message: 'Cadastro realizado com sucesso. Aguarde aprovação do administrador.',
       company: {
         id: company._id,
         cnpj: company.cnpj,
         companyName: company.companyName,
-        status: company.status
+        isApproved: company.isApproved
+      },
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isApproved: user.isApproved
       }
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro no registro:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Login
-router.post('/login', [
-  body('email').isEmail().withMessage('Email inválido'),
-  body('password').notEmpty().withMessage('Senha é obrigatória')
-], async (req, res) => {
+router.post('/login', validateLogin, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
     const { email, password } = req.body;
 
-    // Find user and populate company
     const user = await User.findOne({ email }).populate('company');
     if (!user) {
-      return res.status(401).json({ message: 'Credenciais inválidas' });
+      return res.status(401).json({ message: 'E-mail ou senha inválidos' });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Credenciais inválidas' });
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'E-mail ou senha inválidos' });
     }
 
-    // Check if user is active
     if (!user.isActive) {
       return res.status(401).json({ message: 'Usuário inativo' });
     }
 
-    // Check if company is approved
-    if (user.company.status !== 'approved') {
-      return res.status(401).json({ message: 'Empresa não aprovada' });
+    if (!user.isApproved && user.role !== 'administrador') {
+      return res.status(401).json({ 
+        message: 'Usuário aguardando aprovação do administrador' 
+      });
     }
 
-    // Update last login
+    const company = await Company.findById(user.company._id);
+    if (!company.isActive) {
+      return res.status(401).json({ message: 'Empresa inativa' });
+    }
+
+    if (!company.isApproved && user.role !== 'administrador') {
+      return res.status(401).json({ 
+        message: 'Empresa aguardando aprovação do administrador' 
+      });
+    }
+
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
-    );
+    const token = generateToken(user._id);
 
     res.json({
       token,
@@ -130,69 +116,54 @@ router.post('/login', [
         name: user.name,
         email: user.email,
         role: user.role,
-        permissions: user.permissions,
-        company: {
-          id: user.company._id,
-          name: user.company.companyName,
-          cnpj: user.company.cnpj
-        }
+        isApproved: user.isApproved
+      },
+      company: {
+        id: company._id,
+        cnpj: company.cnpj,
+        companyName: company.companyName,
+        isApproved: company.isApproved,
+        settings: company.settings
       }
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro no login:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get current user
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate('company');
     res.json({
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      permissions: user.permissions,
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        isApproved: req.user.isApproved,
+        lastLogin: req.user.lastLogin
+      },
       company: {
-        id: user.company._id,
-        name: user.company.companyName,
-        cnpj: user.company.cnpj
+        id: req.company._id,
+        cnpj: req.company.cnpj,
+        companyName: req.company.companyName,
+        isApproved: req.company.isApproved,
+        settings: req.company.settings
       }
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao obter dados do usuário:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Update password
-router.put('/password', auth, [
-  body('currentPassword').notEmpty().withMessage('Senha atual é obrigatória'),
-  body('newPassword').isLength({ min: 6 }).withMessage('Nova senha deve ter no mínimo 6 caracteres')
-], async (req, res) => {
+router.post('/logout', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { currentPassword, newPassword } = req.body;
-
-    const user = await User.findById(req.user.id);
-    const isMatch = await user.comparePassword(currentPassword);
-    
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Senha atual incorreta' });
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    res.json({ message: 'Senha atualizada com sucesso' });
+    res.json({ message: 'Logout realizado com sucesso' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro no logout:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 

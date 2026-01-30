@@ -6,28 +6,10 @@ const entryItemSchema = new mongoose.Schema({
     ref: 'Product',
     required: true
   },
-  description: {
-    type: String,
-    required: true
-  },
-  quantity: {
-    type: Number,
-    required: true,
-    min: 0.01
-  },
-  unitCost: {
-    type: Number,
-    required: true
-  },
-  totalCost: {
-    type: Number,
-    required: true
-  },
-  justification: {
-    type: String,
-    required: true,
-    trim: true
-  }
+  productDescription: { type: String, required: true },
+  quantity: { type: Number, required: true, min: 1 },
+  unitCost: { type: Number, required: true },
+  total: { type: Number, required: true }
 });
 
 const entrySchema = new mongoose.Schema({
@@ -35,6 +17,29 @@ const entrySchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true
+  },
+  fiscalDocument: {
+    type: String,
+    required: [true, 'Documento fiscal é obrigatório'],
+    trim: true
+  },
+  supplier: {
+    name: { type: String, required: true, trim: true },
+    cnpj: { type: String, trim: true },
+    email: { type: String, trim: true },
+    phone: { type: String, trim: true }
+  },
+  invoiceValue: {
+    type: Number,
+    required: [true, 'Valor da nota é obrigatório'],
+    min: [0, 'Valor da nota não pode ser negativo']
+  },
+  items: [entryItemSchema],
+  totalItems: { type: Number, required: true },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'cancelled'],
+    default: 'pending'
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -46,53 +51,14 @@ const entrySchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  userName: {
-    type: String,
-    required: true
+  notes: { type: String, trim: true },
+  completedAt: { type: Date },
+  cancelledAt: { type: Date },
+  cancelledBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
-  nfNumber: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  supplier: {
-    name: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    cnpj: {
-      type: String,
-      trim: true
-    },
-    phone: {
-      type: String,
-      trim: true
-    }
-  },
-  nfValue: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  items: [entryItemSchema],
-  totalCost: {
-    type: Number,
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'completed', 'cancelled'],
-    default: 'pending'
-  },
-  entryDate: {
-    type: Date,
-    default: Date.now
-  },
-  observations: {
-    type: String,
-    trim: true
-  },
+  cancellationReason: { type: String },
   createdAt: {
     type: Date,
     default: Date.now
@@ -101,15 +67,47 @@ const entrySchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+}, {
+  timestamps: true
 });
 
-entrySchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
+entrySchema.pre('save', async function(next) {
+  if (this.isNew) {
+    const lastEntry = await this.constructor.findOne({ company: this.company })
+      .sort({ createdAt: -1 });
+    
+    const lastNumber = lastEntry ? parseInt(lastEntry.entryNumber.split('-')[1]) : 0;
+    this.entryNumber = `ENT-${String(lastNumber + 1).padStart(6, '0')}`;
+  }
   next();
 });
 
-// Index for faster searches
-entrySchema.index({ company: 1, entryDate: -1 });
-entrySchema.index({ company: 1, status: 1 });
+entrySchema.methods.calculateTotal = function() {
+  this.totalItems = this.items.reduce((sum, item) => sum + item.total, 0);
+  return this.totalItems;
+};
+
+entrySchema.methods.complete = async function() {
+  this.status = 'completed';
+  this.completedAt = new Date();
+  
+  for (const item of this.items) {
+    const Product = mongoose.model('Product');
+    const product = await Product.findById(item.product);
+    if (product) {
+      await product.addStock(item.quantity, `Entrada NF: ${this.fiscalDocument}`, this.user);
+    }
+  }
+  
+  return this.save();
+};
+
+entrySchema.methods.cancel = function(userId, reason) {
+  this.status = 'cancelled';
+  this.cancelledAt = new Date();
+  this.cancelledBy = userId;
+  this.cancellationReason = reason;
+  return this.save();
+};
 
 module.exports = mongoose.model('Entry', entrySchema);

@@ -1,34 +1,50 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
 const Entry = require('../models/Entry');
 const Product = require('../models/Product');
-const { auth, authorize } = require('../middleware/auth');
-const { generateEntryNumber } = require('../utils/helpers');
-
+const { auth, authorizeOwnerOrAdmin } = require('../middleware/auth');
+const { validateEntry } = require('../middleware/validation');
 const router = express.Router();
 
-// Get all entries
-router.get('/', auth, authorize('canManageEntries'), async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, startDate, endDate, status } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      startDate = '', 
+      endDate = '', 
+      status = '' 
+    } = req.query;
     
-    const query = { company: req.user.company };
-
-    if (startDate || endDate) {
-      query.entryDate = {};
-      if (startDate) query.entryDate.$gte = new Date(startDate);
-      if (endDate) query.entryDate.$lte = new Date(endDate + 'T23:59:59.999Z');
+    const query = { company: req.company._id };
+    
+    if (search) {
+      query.$or = [
+        { entryNumber: { $regex: search, $options: 'i' } },
+        { fiscalDocument: { $regex: search, $options: 'i' } },
+        { 'supplier.name': { $regex: search, $options: 'i' } }
+      ];
     }
-
+    
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate + 'T23:59:59');
+      }
+    }
+    
     if (status) {
       query.status = status;
     }
 
     const entries = await Entry.find(query)
       .populate('user', 'name')
-      .sort({ entryDate: -1 })
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
 
     const total = await Entry.countDocuments(query);
 
@@ -39,146 +55,239 @@ router.get('/', auth, authorize('canManageEntries'), async (req, res) => {
       total
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao listar entradas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Create entry
-router.post('/', auth, authorize('canManageEntries'), [
-  body('nfNumber').notEmpty().withMessage('Número da NF é obrigatório'),
-  body('supplier.name').notEmpty().withMessage('Nome do fornecedor é obrigatório'),
-  body('nfValue').isNumeric().withMessage('Valor da NF deve ser um número'),
-  body('items').isArray({ min: 1 }).withMessage('Itens são obrigatórios')
-], async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    const entry = await Entry.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    })
+      .populate('user', 'name')
+      .populate('items.product', 'description barcode unit');
+
+    if (!entry) {
+      return res.status(404).json({ message: 'Entrada não encontrada' });
     }
 
-    const { nfNumber, supplier, nfValue, items, observations } = req.body;
+    res.json(entry);
+  } catch (error) {
+    console.error('Erro ao obter entrada:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
 
-    // Validate items and calculate total
-    let totalCost = 0;
-    const validatedItems = [];
+router.post('/', auth, authorizeOwnerOrAdmin, validateEntry, async (req, res) => {
+  try {
+    const { fiscalDocument, supplier, invoiceValue, items, notes } = req.body;
 
     for (const item of items) {
-      const product = await Product.findById(item.product);
+      const product = await Product.findOne({ 
+        _id: item.product,
+        company: req.company._id 
+      });
       
       if (!product) {
-        return res.status(404).json({ message: `Produto ${item.product} não encontrado` });
+        return res.status(404).json({ message: `Produto não encontrado: ${item.product}` });
       }
-
-      if (product.company.toString() !== req.user.company.toString()) {
-        return res.status(403).json({ message: `Produto não pertence à sua empresa` });
-      }
-
-      const itemTotal = item.unitCost * item.quantity;
-      totalCost += itemTotal;
-
-      validatedItems.push({
-        product: product._id,
-        description: product.description,
-        quantity: item.quantity,
-        unitCost: item.unitCost,
-        totalCost: itemTotal,
-        justification: item.justification
-      });
-
-      // Update product stock
-      product.quantity += item.quantity;
-      product.totalEntries += item.quantity;
-      await product.save();
+      
+      item.productDescription = product.description;
+      item.total = item.unitCost * item.quantity;
     }
 
-    const entry = new Entry({
-      entryNumber: generateEntryNumber(),
-      company: req.user.company,
-      user: req.user._id,
-      userName: req.user.name,
-      nfNumber,
+    const entryData = {
+      fiscalDocument,
       supplier,
-      nfValue,
-      items: validatedItems,
-      totalCost,
-      observations
-    });
+      invoiceValue,
+      items,
+      company: req.company._id,
+      user: req.user._id,
+      notes
+    };
 
+    entryData.calculateTotal();
+
+    const entry = new Entry(entryData);
     await entry.save();
 
-    res.status(201).json({
-      message: 'Entrada realizada com sucesso',
-      entry
-    });
+    const populatedEntry = await Entry.findById(entry._id)
+      .populate('user', 'name')
+      .populate('items.product', 'description barcode unit');
+
+    res.status(201).json(populatedEntry);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao criar entrada:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Update entry
-router.put('/:id', auth, authorize('canManageEntries'), async (req, res) => {
+router.put('/:id/complete', auth, authorizeOwnerOrAdmin, async (req, res) => {
   try {
-    const entry = await Entry.findById(req.params.id);
-    
+    const entry = await Entry.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
     if (!entry) {
       return res.status(404).json({ message: 'Entrada não encontrada' });
     }
 
-    if (entry.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Sem permissão para editar esta entrada' });
+    if (entry.status !== 'pending') {
+      return res.status(400).json({ message: 'Entrada já foi processada' });
     }
 
-    const { nfNumber, supplier, nfValue, observations, status } = req.body;
+    await entry.complete();
 
-    if (nfNumber) entry.nfNumber = nfNumber;
-    if (supplier) entry.supplier = { ...entry.supplier, ...supplier };
-    if (nfValue) entry.nfValue = nfValue;
-    if (observations) entry.observations = observations;
-    if (status) entry.status = status;
+    res.json({ message: 'Entrada concluída com sucesso', entry });
+  } catch (error) {
+    console.error('Erro ao concluir entrada:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
 
-    await entry.save();
+router.put('/:id/cancel', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    
+    const entry = await Entry.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
+    if (!entry) {
+      return res.status(404).json({ message: 'Entrada não encontrada' });
+    }
+
+    if (entry.status === 'cancelled') {
+      return res.status(400).json({ message: 'Entrada já está cancelada' });
+    }
+
+    if (entry.status === 'completed') {
+      return res.status(400).json({ 
+        message: 'Não é possível cancelar uma entrada já concluída' 
+      });
+    }
+
+    await entry.cancel(req.user._id, reason);
+
+    res.json({ message: 'Entrada cancelada com sucesso', entry });
+  } catch (error) {
+    console.error('Erro ao cancelar entrada:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.put('/:id', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const { fiscalDocument, supplier, invoiceValue, items, notes } = req.body;
+    
+    const entry = await Entry.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
+    if (!entry) {
+      return res.status(404).json({ message: 'Entrada não encontrada' });
+    }
+
+    if (entry.status !== 'pending') {
+      return res.status(400).json({ 
+        message: 'Apenas entradas pendentes podem ser alteradas' 
+      });
+    }
+
+    for (const item of items) {
+      const product = await Product.findOne({ 
+        _id: item.product,
+        company: req.company._id 
+      });
+      
+      if (!product) {
+        return res.status(404).json({ message: `Produto não encontrado: ${item.product}` });
+      }
+      
+      item.productDescription = product.description;
+      item.total = item.unitCost * item.quantity;
+    }
+
+    const updateData = {
+      fiscalDocument,
+      supplier,
+      invoiceValue,
+      items,
+      notes
+    };
+
+    updateData.calculateTotal();
+
+    const updatedEntry = await Entry.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    )
+      .populate('user', 'name')
+      .populate('items.product', 'description barcode unit');
+
+    res.json(updatedEntry);
+  } catch (error) {
+    console.error('Erro ao atualizar entrada:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/report/period', auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
+    }
+
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T23:59:59');
+
+    const entries = await Entry.find({
+      company: req.company._id,
+      createdAt: { $gte: start, $lte: end }
+    }).populate('user', 'name');
+
+    const totalEntries = entries.length;
+    const totalValue = entries.reduce((sum, entry) => sum + entry.totalItems, 0);
+
+    const supplierStats = {};
+    entries.forEach(entry => {
+      if (!supplierStats[entry.supplier.name]) {
+        supplierStats[entry.supplier.name] = { count: 0, total: 0 };
+      }
+      supplierStats[entry.supplier.name].count++;
+      supplierStats[entry.supplier.name].total += entry.invoiceValue;
+    });
+
+    const topProducts = {};
+    entries.forEach(entry => {
+      entry.items.forEach(item => {
+        if (!topProducts[item.productDescription]) {
+          topProducts[item.productDescription] = { quantity: 0, total: 0 };
+        }
+        topProducts[item.productDescription].quantity += item.quantity;
+        topProducts[item.productDescription].total += item.total;
+      });
+    });
 
     res.json({
-      message: 'Entrada atualizada com sucesso',
-      entry
+      period: { startDate, endDate },
+      totalEntries,
+      totalValue,
+      supplierStats,
+      topProducts,
+      entries
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
-
-// Delete entry
-router.delete('/:id', auth, authorize('canManageEntries'), async (req, res) => {
-  try {
-    const entry = await Entry.findById(req.params.id);
-    
-    if (!entry) {
-      return res.status(404).json({ message: 'Entrada não encontrada' });
-    }
-
-    if (entry.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Sem permissão para excluir esta entrada' });
-    }
-
-    // Restore product stock
-    for (const item of entry.items) {
-      const product = await Product.findById(item.product);
-      if (product) {
-        product.quantity -= item.quantity;
-        product.totalEntries -= item.quantity;
-        await product.save();
-      }
-    }
-
-    await Entry.findByIdAndDelete(req.params.id);
-
-    res.json({ message: 'Entrada excluída com sucesso' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao gerar relatório de entradas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 

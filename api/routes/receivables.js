@@ -1,143 +1,300 @@
 const express = require('express');
+const Receivable = require('../models/Receivable');
 const Sale = require('../models/Sale');
-const { auth, authorize } = require('../middleware/auth');
-
+const { auth, authorizeOwnerOrAdmin } = require('../middleware/auth');
 const router = express.Router();
 
-// Get receivables
-router.get('/', auth, authorize('canManageReceivables'), async (req, res) => {
+router.get('/', auth, authorizeOwnerOrAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, customer } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      status = '', 
+      startDate = '', 
+      endDate = '' 
+    } = req.query;
     
-    const match = {
-      company: req.user.company,
-      'payments.method': { $in: ['bank_slip', 'promissory_note', 'installment'] }
-    };
-
+    const query = { company: req.company._id };
+    
+    if (search) {
+      query.$or = [
+        { customerName: { $regex: search, $options: 'i' } },
+        { saleNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
     if (status) {
-      match['payments.status'] = status;
+      query.status = status;
+    }
+    
+    if (startDate || endDate) {
+      query.dueDate = {};
+      if (startDate) {
+        query.dueDate.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.dueDate.$lte = new Date(endDate + 'T23:59:59');
+      }
     }
 
-    if (customer) {
-      match.customer = customer;
-    }
-
-    const sales = await Sale.find(match)
-      .populate('customer', 'name document')
-      .populate('user', 'name')
-      .sort({ saleDate: -1 })
+    const receivables = await Receivable.find(query)
+      .populate('sale', 'saleNumber createdAt')
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .sort({ dueDate: 1 });
 
-    // Filter payments
-    const receivables = [];
-    sales.forEach(sale => {
-      sale.payments.forEach(payment => {
-        if (['bank_slip', 'promissory_note', 'installment'].includes(payment.method)) {
-          if (!status || payment.status === status) {
-            receivables.push({
-              _id: sale._id,
-              saleNumber: sale.saleNumber,
-              saleDate: sale.saleDate,
-              customer: sale.customer,
-              customerName: sale.customerName,
-              payment: payment,
-              total: sale.total
-            });
-          }
-        }
-      });
-    });
-
-    const total = receivables.length;
+    const total = await Receivable.countDocuments(query);
 
     res.json({
-      receivables: receivables.slice((page - 1) * limit, page * limit),
+      receivables,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao listar contas a receber:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Update payment status
-router.put('/:saleId/payment/:paymentId', auth, authorize('canManageReceivables'), async (req, res) => {
+router.get('/overdue', auth, authorizeOwnerOrAdmin, async (req, res) => {
   try {
-    const { status } = req.body;
+    const overdueReceivables = await Receivable.find({
+      company: req.company._id,
+      status: 'pending',
+      dueDate: { $lt: new Date() }
+    })
+    .populate('sale', 'saleNumber createdAt')
+    .sort({ dueDate: 1 });
 
-    const sale = await Sale.findById(req.params.saleId);
-    
-    if (!sale) {
-      return res.status(404).json({ message: 'Venda não encontrada' });
-    }
+    res.json(overdueReceivables);
+  } catch (error) {
+    console.error('Erro ao listar contas vencidas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
 
-    if (sale.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Sem permissão para editar esta venda' });
-    }
+router.get('/summary', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const summary = await Receivable.aggregate([
+      { $match: { company: req.company._id } },
+      { $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        total: { $sum: '$currentAmount' }
+      }}
+    ]);
 
-    const payment = sale.payments.id(req.params.paymentId);
-    
-    if (!payment) {
-      return res.status(404).json({ message: 'Pagamento não encontrado' });
-    }
+    const overdueTotal = await Receivable.aggregate([
+      { $match: { 
+        company: req.company._id,
+        status: 'pending',
+        dueDate: { $lt: new Date() }
+      }},
+      { $group: {
+        _id: null,
+        count: { $sum: 1 },
+        total: { $sum: '$currentAmount' }
+      }}
+    ]);
 
-    if (!['bank_slip', 'promissory_note', 'installment'].includes(payment.method)) {
-      return res.status(400).json({ message: 'Este método de pagamento não pode ser atualizado' });
-    }
-
-    payment.status = status;
-    await sale.save();
+    const next30Days = await Receivable.aggregate([
+      { $match: { 
+        company: req.company._id,
+        status: 'pending',
+        dueDate: { 
+          $gte: new Date(),
+          $lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        }
+      }},
+      { $group: {
+        _id: null,
+        count: { $sum: 1 },
+        total: { $sum: '$currentAmount' }
+      }}
+    ]);
 
     res.json({
-      message: 'Status do pagamento atualizado com sucesso',
-      sale
+      summary,
+      overdue: overdueTotal[0] || { count: 0, total: 0 },
+      next30Days: next30Days[0] || { count: 0, total: 0 }
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao obter resumo de contas a receber:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get overdue receivables
-router.get('/overdue', auth, authorize('canManageReceivables'), async (req, res) => {
+router.get('/:id', auth, authorizeOwnerOrAdmin, async (req, res) => {
   try {
-    const today = new Date();
-    
-    const sales = await Sale.find({
-      company: req.user.company,
-      'payments.method': { $in: ['bank_slip', 'promissory_note', 'installment'] },
-      'payments.status': 'pending',
-      'payments.dueDate': { $lt: today }
+    const receivable = await Receivable.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
     })
-    .populate('customer', 'name document')
-    .sort({ 'payments.dueDate': 1 });
+      .populate('sale')
+      .populate('payments.user', 'name');
 
-    const overdue = [];
-    sales.forEach(sale => {
-      sale.payments.forEach(payment => {
-        if (['bank_slip', 'promissory_note', 'installment'].includes(payment.method) &&
-            payment.status === 'pending' &&
-            payment.dueDate < today) {
-          overdue.push({
-            _id: sale._id,
-            saleNumber: sale.saleNumber,
-            saleDate: sale.saleDate,
-            customer: sale.customer,
-            customerName: sale.customerName,
-            payment: payment,
-            total: sale.total
-          });
-        }
-      });
+    if (!receivable) {
+      return res.status(404).json({ message: 'Conta a receber não encontrada' });
+    }
+
+    res.json(receivable);
+  } catch (error) {
+    console.error('Erro ao obter conta a receber:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.post('/:id/payment', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const { amount, method, notes } = req.body;
+    
+    const receivable = await Receivable.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
     });
 
-    res.json(overdue);
+    if (!receivable) {
+      return res.status(404).json({ message: 'Conta a receber não encontrada' });
+    }
+
+    if (receivable.status === 'paid') {
+      return res.status(400).json({ message: 'Conta já está paga' });
+    }
+
+    if (amount > receivable.currentAmount) {
+      return res.status(400).json({ message: 'Valor do pagamento é maior que o valor devido' });
+    }
+
+    await receivable.addPayment(amount, method, req.user._id, notes);
+
+    res.json({ message: 'Pagamento registrado com sucesso', receivable });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao registrar pagamento:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.put('/:id/cancel', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    
+    const receivable = await Receivable.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
+    if (!receivable) {
+      return res.status(404).json({ message: 'Conta a receber não encontrada' });
+    }
+
+    if (receivable.status === 'cancelled') {
+      return res.status(400).json({ message: 'Conta já está cancelada' });
+    }
+
+    await receivable.cancel(reason);
+
+    res.json({ message: 'Conta cancelada com sucesso', receivable });
+  } catch (error) {
+    console.error('Erro ao cancelar conta:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/customer/:customerId', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const receivables = await Receivable.find({
+      company: req.company._id,
+      customer: req.params.customerId
+    })
+    .populate('sale', 'saleNumber createdAt')
+    .sort({ dueDate: 1 });
+
+    res.json(receivables);
+  } catch (error) {
+    console.error('Erro ao listar contas do cliente:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/installments/overdue', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const overdueInstallments = await Receivable.aggregate([
+      { $match: { company: req.company._id } },
+      { $unwind: '$installments' },
+      { $match: { 
+        'installments.status': 'pending',
+        'installments.dueDate': { $lt: new Date() }
+      }},
+      {
+        $project: {
+          customerName: 1,
+          saleNumber: 1,
+          installment: '$installments'
+        }
+      },
+      { $sort: { 'installment.dueDate': 1 } }
+    ]);
+
+    res.json(overdueInstallments);
+  } catch (error) {
+    console.error('Erro ao listar parcelas vencidas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.post('/installments/:receivableId/:installmentNumber/payment', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const { amount, method, notes } = req.body;
+    
+    const receivable = await Receivable.findOne({ 
+      _id: req.params.receivableId,
+      company: req.company._id 
+    });
+
+    if (!receivable) {
+      return res.status(404).json({ message: 'Conta a receber não encontrada' });
+    }
+
+    const installment = receivable.installments.id(req.params.installmentNumber);
+    if (!installment) {
+      return res.status(404).json({ message: 'Parcela não encontrada' });
+    }
+
+    if (installment.status === 'paid') {
+      return res.status(400).json({ message: 'Parcela já está paga' });
+    }
+
+    if (amount > installment.amount) {
+      return res.status(400).json({ message: 'Valor do pagamento é maior que o valor da parcela' });
+    }
+
+    installment.status = 'paid';
+    installment.paidAt = new Date();
+    installment.paidAmount = amount;
+
+    receivable.payments.push({
+      amount,
+      method,
+      notes,
+      user: req.user._id
+    });
+
+    receivable.currentAmount -= amount;
+
+    const allPaid = receivable.installments.every(inst => inst.status === 'paid');
+    if (allPaid) {
+      receivable.status = 'paid';
+      receivable.currentAmount = 0;
+    }
+
+    await receivable.save();
+
+    res.json({ message: 'Pagamento de parcela registrado com sucesso', receivable });
+  } catch (error) {
+    console.error('Erro ao registrar pagamento de parcela:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 

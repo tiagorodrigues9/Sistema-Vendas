@@ -1,541 +1,461 @@
-import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Search, X, DollarSign, CreditCard, Printer } from 'lucide-react';
-import { useForm } from 'react-hook-form';
-import api from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
-import toast from 'react-hot-toast';
+import React, { useState } from 'react';
+import { Search, Plus, Trash2, DollarSign, Calculator, Printer, Menu, X } from 'lucide-react';
 
 const Sales = () => {
-  const [cashRegister, setCashRegister] = useState(null);
-  const [customers, setCustomers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [totalPaid, setTotalPaid] = useState(0);
-  const [change, setChange] = useState(0);
-  const [showAddPayment, setShowAddPayment] = useState(false);
-  const [showProductSearch, setShowProductSearch] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isCashRegisterOpen, setIsCashRegisterOpen] = useState(false);
   const [showCashManagement, setShowCashManagement] = useState(false);
-  const [cashAmount, setCashAmount] = useState('');
+  const [cashAmount, setCashAmount] = useState(0);
+  const [cashAdjustment, setCashAdjustment] = useState('');
+  const [cartItems, setCartItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState('CONSUMIDOR');
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [currentSale, setCurrentSale] = useState(null);
 
-  const { register, handleSubmit, formState: { errors } } = useForm();
-
-  useEffect(() => {
-    loadCashRegister();
-    loadCustomers();
-    loadProducts();
-  }, []);
-
-  useEffect(() => {
-    const total = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
-    const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    setTotalPaid(paid);
-    setChange(Math.max(0, paid - total));
-  }, [cart, payments]);
-
-  const loadCashRegister = async () => {
-    try {
-      const response = await api.get('/sales/cash-register/current');
-      setCashRegister(response.data);
-    } catch (error) {
-      console.log('No open cash register');
-    }
+  const openCashRegister = () => {
+    setIsCashRegisterOpen(true);
   };
 
-  const loadCustomers = async () => {
-    try {
-      const response = await api.get('/customers');
-      setCustomers(response.data.customers);
-    } catch (error) {
-      console.error('Error loading customers:', error);
-    }
-  };
-
-  const loadProducts = async () => {
-    try {
-      const response = await api.get('/products');
-      setProducts(response.data.products);
-    } catch (error) {
-      console.error('Error loading products:', error);
-    }
-  };
-
-  const openCashRegister = async (data) => {
-    setLoading(true);
-    try {
-      await api.post('/sales/cash-register/open', {
-        openingBalance: parseFloat(data.openingBalance) || 0
-      });
-      toast.success('Caixa aberto com sucesso!');
-      loadCashRegister();
+  const adjustCash = (type) => {
+    const value = parseFloat(cashAdjustment);
+    if (!isNaN(value)) {
+      if (type === 'add') {
+        setCashAmount(cashAmount + value);
+      } else {
+        setCashAmount(Math.max(0, cashAmount - value));
+      }
+      setCashAdjustment('');
       setShowCashManagement(false);
-    } catch (error) {
-      toast.error('Erro ao abrir caixa');
-    } finally {
-      setLoading(false);
     }
   };
 
   const addToCart = (product) => {
-    const existingItem = cart.find(item => item.product._id === product._id);
-    
+    const existingItem = cartItems.find(item => item.barcode === product.barcode);
     if (existingItem) {
-      setCart(cart.map(item =>
-        item.product._id === product._id
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ));
+      updateQuantity(existingItem.barcode, existingItem.quantity + 1);
     } else {
-      setCart([...cart, {
-        product,
-        quantity: 1,
-        unitPrice: product.salePrice
-      }]);
+      setCartItems([...cartItems, { ...product, quantity: 1 }]);
     }
-    setShowProductSearch(false);
-    setProductSearch('');
   };
 
-  const removeFromCart = (index) => {
-    setCart(cart.filter((_, i) => i !== index));
+  const removeFromCart = (barcode) => {
+    setCartItems(cartItems.filter(item => item.barcode !== barcode));
   };
 
-  const updateQuantity = (index, quantity) => {
+  const updateQuantity = (barcode, quantity) => {
     if (quantity <= 0) {
-      removeFromCart(index);
+      removeFromCart(barcode);
     } else {
-      setCart(cart.map((item, i) =>
-        i === index ? { ...item, quantity } : item
+      setCartItems(cartItems.map(item => 
+        item.barcode === barcode ? { ...item, quantity } : item
       ));
     }
-  };
-
-  const addPayment = (method, amount) => {
-    setPayments([...payments, { method, amount: parseFloat(amount) }]);
-    setShowAddPayment(false);
-  };
-
-  const removePayment = (index) => {
-    setPayments(payments.filter((_, i) => i !== index));
   };
 
   const getTotal = () => {
-    return cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+    return cartItems.reduce((total, item) => total + (item.unitPrice * item.quantity), 0);
   };
 
-  const finishSale = async () => {
-    if (cart.length === 0) {
-      toast.error('Adicione itens ao carrinho');
-      return;
-    }
-
-    if (payments.length === 0) {
-      toast.error('Adicione uma forma de pagamento');
-      return;
-    }
-
-    const total = getTotal();
-    if (totalPaid < total) {
-      toast.error('Valor pago é insuficiente');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await api.post('/sales', {
-        customer: customers[0]?._id || null,
-        items: cart.map(item => ({
-          product: item.product._id,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice
-        })),
-        payments: payments.map(payment => ({
-          method: payment.method,
-          amount: payment.amount
-        }))
-      });
-
-      toast.success('Venda realizada com sucesso!');
-      setCart([]);
-      setPayments([]);
-      
-      // Show print option
-      if (window.confirm('Deseja imprimir o comprovante?')) {
-        window.print();
-      }
-    } catch (error) {
-      toast.error('Erro ao realizar venda');
-    } finally {
-      setLoading(false);
+  const addPaymentMethod = () => {
+    const remaining = getTotal() - paymentMethods.reduce((sum, p) => sum + p.amount, 0);
+    if (remaining > 0) {
+      setPaymentMethods([...paymentMethods, { type: 'dinheiro', amount: remaining }]);
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value || 0);
+  const updatePaymentMethod = (index, field, value) => {
+    const newMethods = [...paymentMethods];
+    newMethods[index][field] = value;
+    setPaymentMethods(newMethods);
   };
 
-  const paymentMethods = [
-    { value: 'cash', label: 'Dinheiro' },
-    { value: 'credit_card', label: 'Cartão de Crédito' },
-    { value: 'debit_card', label: 'Cartão de Débito' },
-    { value: 'pix', label: 'PIX' },
-    { value: 'bank_slip', label: 'Boleto' },
-    { value: 'promissory_note', label: 'Promissória' }
+  const removePaymentMethod = (index) => {
+    setPaymentMethods(paymentMethods.filter((_, i) => i !== index));
+  };
+
+  const finishSale = () => {
+    const sale = {
+      id: Date.now(),
+      customer: selectedCustomer,
+      date: new Date().toLocaleDateString('pt-BR'),
+      time: new Date().toLocaleTimeString('pt-BR'),
+      items: cartItems,
+      paymentMethods: paymentMethods,
+      total: getTotal()
+    };
+    setCurrentSale(sale);
+    setShowPrintDialog(true);
+    setCartItems([]);
+    setPaymentMethods([]);
+  };
+
+  const mockProducts = [
+    { barcode: '7891234567890', description: 'Produto Exemplo 1', unitPrice: 10.99, stock: 50 },
+    { barcode: '7891234567891', description: 'Produto Exemplo 2', unitPrice: 25.50, stock: 30 },
+    { barcode: '7891234567892', description: 'Produto Exemplo 3', unitPrice: 5.75, stock: 100 },
   ];
 
-  const filteredProducts = products.filter(product =>
-    product.description.toLowerCase().includes(productSearch.toLowerCase()) ||
-    product.barcode?.includes(productSearch)
+  const filteredProducts = mockProducts.filter(product =>
+    product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.barcode.includes(searchTerm)
   );
 
-  if (!cashRegister) {
-    return (
-      <div className="max-w-md mx-auto">
-        <div className="card">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Abrir Caixa</h2>
-          
-          <form onSubmit={handleSubmit(openCashRegister)} className="space-y-4">
-            <div>
-              <label className="form-label">Valor Inicial em Caixa</label>
-              <input
-                {...register('openingBalance')}
-                type="number"
-                step="0.01"
-                className="form-input"
-                placeholder="0,00"
-              />
-            </div>
+  const printReceipt = (type) => {
+    // Simulação de impressão
+    alert(`Imprimindo comprovante em impressora ${type === 'thermal' ? 'térmica' : 'A4'}`);
+    setShowPrintDialog(false);
+  };
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary w-full"
-            >
-              {loading ? <LoadingSpinner size="small" /> : 'Abrir Caixa'}
+  if (!isCashRegisterOpen) {
+    return (
+      <div className="container-responsive flex items-center justify-center min-h-screen">
+        <div className="card max-w-md w-full">
+          <div className="card-header text-center">
+            <h2 className="card-title text-2xl">Caixa Fechado</h2>
+          </div>
+          <div className="card-content text-center">
+            <p className="text-gray-600 mb-6">O caixa está fechado. Abra o caixa para iniciar as vendas.</p>
+            <button onClick={openCashRegister} className="btn btn-primary w-full">
+              Abrir Caixa
             </button>
-          </form>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Main Sales Area */}
-      <div className="lg:col-span-2 space-y-6">
-        <div className="card">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Nova Venda</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">
-                Caixa aberto: {formatCurrency(cashRegister.openingBalance)}
-              </span>
-              <button
-                onClick={() => setShowCashManagement(true)}
-                className="btn btn-outline btn-sm"
-              >
-                Gerenciar Caixa
-              </button>
+    <div className="container-responsive">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Ponto de Venda</h1>
+        <div className="flex items-center gap-4">
+          <div className="text-sm">
+            <span className="text-gray-500">Saldo Caixa: </span>
+            <span className="font-bold text-green-600">R$ {cashAmount.toFixed(2)}</span>
+          </div>
+          <button 
+            onClick={() => setShowCashManagement(true)}
+            className="btn btn-secondary btn-sm"
+          >
+            <Calculator className="w-4 h-4" />
+          </button>
+          <div className="text-sm text-gray-500">
+            {new Date().toLocaleDateString('pt-BR')} • {new Date().toLocaleTimeString('pt-BR')}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Área Principal */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Cliente e Data/Hora */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">Informações da Venda</h3>
+            </div>
+            <div className="card-content">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Cliente</label>
+                  <input
+                    type="text"
+                    value={selectedCustomer}
+                    onChange={(e) => setSelectedCustomer(e.target.value)}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Data</label>
+                  <input
+                    type="text"
+                    value={new Date().toLocaleDateString('pt-BR')}
+                    disabled
+                    className="input bg-gray-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Hora</label>
+                  <input
+                    type="text"
+                    value={new Date().toLocaleTimeString('pt-BR')}
+                    disabled
+                    className="input bg-gray-50"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Customer Selection */}
-          <div className="mb-6">
-            <label className="form-label">Cliente</label>
-            <select className="form-input">
-              <option value="">CONSUMIDOR</option>
-              {customers.map(customer => (
-                <option key={customer._id} value={customer._id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Date and Time */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="form-label">Data</label>
-              <input
-                type="date"
-                value={new Date().toISOString().split('T')[0]}
-                readOnly
-                className="form-input"
-              />
+          {/* Seleção de Itens */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">Selecionar Itens</h3>
             </div>
-            <div>
-              <label className="form-label">Hora</label>
-              <input
-                type="time"
-                value={new Date().toTimeString().slice(0, 5)}
-                readOnly
-                className="form-input"
-              />
-            </div>
-          </div>
+            <div className="card-content">
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por descrição ou código de barras..."
+                  className="input pl-10"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
 
-          {/* Product Search */}
-          <div className="mb-6">
-            <label className="form-label">Adicionar Produto</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                onFocus={() => setShowProductSearch(true)}
-                placeholder="Digite o nome ou código de barras..."
-                className="form-input pr-10"
-              />
-              <Search className="absolute right-3 top-3 w-5 h-5 text-gray-400" />
-              
-              {showProductSearch && productSearch && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {filteredProducts.map(product => (
-                    <div
-                      key={product._id}
-                      onClick={() => addToCart(product)}
-                      className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-                    >
-                      <div className="flex justify-between">
+              {/* Lista de Itens no Carrinho */}
+              {cartItems.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="font-medium mb-3">Itens na Venda</h4>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-sm">Código</th>
+                          <th className="px-4 py-2 text-left text-sm">Descrição</th>
+                          <th className="px-4 py-2 text-right text-sm">Valor Unit.</th>
+                          <th className="px-4 py-2 text-center text-sm">Qtd</th>
+                          <th className="px-4 py-2 text-right text-sm">Total</th>
+                          <th className="px-4 py-2 text-center text-sm">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cartItems.map((item) => (
+                          <tr key={item.barcode} className="border-t">
+                            <td className="px-4 py-2 text-sm">{item.barcode}</td>
+                            <td className="px-4 py-2 text-sm">{item.description}</td>
+                            <td className="px-4 py-2 text-right text-sm">R$ {item.unitPrice.toFixed(2)}</td>
+                            <td className="px-4 py-2 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => updateQuantity(item.barcode, parseInt(e.target.value))}
+                                className="w-16 px-2 py-1 border rounded text-sm text-center"
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm">R$ {(item.unitPrice * item.quantity).toFixed(2)}</td>
+                            <td className="px-4 py-2 text-center">
+                              <button
+                                onClick={() => removeFromCart(item.barcode)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Produtos Disponíveis */}
+              <div>
+                <h4 className="font-medium mb-3">Produtos Disponíveis</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {filteredProducts.map((product) => (
+                    <div key={product.barcode} className="border rounded-lg p-3 hover:bg-gray-50">
+                      <div className="flex justify-between items-start mb-2">
                         <div>
-                          <p className="font-medium">{product.description}</p>
-                          <p className="text-sm text-gray-500">
-                            {product.barcode && `Cód: ${product.barcode}`}
-                          </p>
+                          <h5 className="font-medium text-sm">{product.description}</h5>
+                          <p className="text-xs text-gray-500">{product.barcode}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-medium">{formatCurrency(product.salePrice)}</p>
-                          <p className="text-sm text-gray-500">
-                            Estoque: {product.quantity} {product.unit}
-                          </p>
-                        </div>
+                        <span className="font-bold text-green-600">R$ {product.unitPrice.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500">Estoque: {product.stock}</span>
+                        <button
+                          onClick={() => addToCart(product)}
+                          className="btn btn-primary btn-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   ))}
-                  {filteredProducts.length === 0 && (
-                    <div className="p-3 text-gray-500 text-center">
-                      Nenhum produto encontrado
-                    </div>
-                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
-          {/* Cart */}
-          <div className="mb-6">
-            <h3 className="font-semibold mb-3">Itens da Venda</h3>
-            {cart.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">Nenhum item adicionado</p>
-            ) : (
-              <div className="space-y-2">
-                {cart.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium">{item.product.description}</p>
-                      <p className="text-sm text-gray-500">
-                        {formatCurrency(item.unitPrice)} x {item.quantity} {item.product.unit}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => updateQuantity(index, parseInt(e.target.value) || 0)}
-                        className="w-16 form-input text-sm"
-                        min="1"
-                      />
-                      <span className="font-medium w-24 text-right">
-                        {formatCurrency(item.unitPrice * item.quantity)}
-                      </span>
-                      <button
-                        onClick={() => removeFromCart(index)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+          {/* Formas de Pagamento */}
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">Formas de Pagamento</h3>
+            </div>
+            <div className="card-content">
+              <div className="space-y-3">
+                {paymentMethods.map((method, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <select
+                      value={method.type}
+                      onChange={(e) => updatePaymentMethod(index, 'type', e.target.value)}
+                      className="input flex-1"
+                    >
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="cartao">Cartão</option>
+                      <option value="pix">PIX</option>
+                      <option value="boleto">Boleto</option>
+                      <option value="promissoria">Promissória</option>
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={method.amount}
+                      onChange={(e) => updatePaymentMethod(index, 'amount', parseFloat(e.target.value))}
+                      className="input w-32"
+                      placeholder="Valor"
+                    />
+                    <button
+                      onClick={() => removePaymentMethod(index)}
+                      className="btn btn-error btn-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-
-          {/* Payments */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-semibold">Formas de Pagamento</h3>
-              <button
-                onClick={() => setShowAddPayment(true)}
-                className="btn btn-outline btn-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </button>
-            </div>
-            
-            {payments.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">Nenhuma forma de pagamento adicionada</p>
-            ) : (
-              <div className="space-y-2">
-                {payments.map((payment, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center">
-                      <CreditCard className="w-4 h-4 mr-2 text-gray-500" />
-                      <span>
-                        {paymentMethods.find(m => m.value === payment.method)?.label || payment.method}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatCurrency(payment.amount)}</span>
-                      <button
-                        onClick={() => removePayment(index)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Total */}
-          <div className="border-t pt-4">
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>{formatCurrency(getTotal())}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total Pago:</span>
-                <span>{formatCurrency(totalPaid)}</span>
-              </div>
-              {change > 0 && (
-                <div className="flex justify-between font-semibold">
-                  <span>Troco:</span>
-                  <span>{formatCurrency(change)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-2 mt-6">
-            <button
-              onClick={finishSale}
-              disabled={loading || cart.length === 0 || payments.length === 0}
-              className="btn btn-primary flex-1"
-            >
-              {loading ? <LoadingSpinner size="small" /> : 'Finalizar Venda'}
-            </button>
-            <button className="btn btn-outline">
-              <Printer className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Sidebar */}
-      <div className="space-y-6">
-        {/* Quick Summary */}
-        <div className="card">
-          <h3 className="font-semibold mb-4">Resumo da Venda</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Itens:</span>
-              <span className="font-medium">{cart.length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Total:</span>
-              <span className="font-semibold text-lg">{formatCurrency(getTotal())}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Pago:</span>
-              <span className="font-medium">{formatCurrency(totalPaid)}</span>
-            </div>
-            {change > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Troco:</span>
-                <span className="font-semibold">{formatCurrency(change)}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Today's Summary */}
-        <div className="card">
-          <h3 className="font-semibold mb-4">Hoje</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Vendas:</span>
-              <span>0</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Faturamento:</span>
-              <span>{formatCurrency(0)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Add Payment Modal */}
-      {showAddPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96">
-            <h3 className="font-semibold mb-4">Adicionar Pagamento</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="form-label">Forma de Pagamento</label>
-                <select
-                  id="paymentMethod"
-                  className="form-input"
+                
+                <button
+                  onClick={addPaymentMethod}
+                  className="btn btn-secondary w-full"
+                  disabled={paymentMethods.reduce((sum, p) => sum + p.amount, 0) >= getTotal()}
                 >
-                  {paymentMethods.map(method => (
-                    <option key={method.value} value={method.value}>
-                      {method.label}
-                    </option>
-                  ))}
-                </select>
+                  Adicionar Forma de Pagamento
+                </button>
               </div>
-              
-              <div>
-                <label className="form-label">Valor</label>
-                <input
-                  id="paymentAmount"
-                  type="number"
-                  step="0.01"
-                  className="form-input"
-                  placeholder="0,00"
-                />
+
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="font-medium">Total da Venda:</span>
+                  <span className="text-xl font-bold text-green-600">R$ {getTotal().toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center mb-4">
+                  <span className="font-medium">Total Pago:</span>
+                  <span className="text-lg font-bold text-blue-600">
+                    R$ {paymentMethods.reduce((sum, p) => sum + p.amount, 0).toFixed(2)}
+                  </span>
+                </div>
+                <button
+                  onClick={finishSale}
+                  className="btn btn-success w-full"
+                  disabled={paymentMethods.reduce((sum, p) => sum + p.amount, 0) !== getTotal() || cartItems.length === 0}
+                >
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Finalizar Venda
+                </button>
               </div>
             </div>
+          </div>
+        </div>
 
-            <div className="flex gap-2 mt-6">
+        {/* Resumo */}
+        <div className="lg:col-span-1">
+          <div className="card">
+            <div className="card-header">
+              <h3 className="card-title">Resumo da Venda</h3>
+            </div>
+            <div className="card-content">
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span>Cliente:</span>
+                  <span className="font-medium">{selectedCustomer}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Itens:</span>
+                  <span className="font-medium">{cartItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span>R$ {getTotal().toFixed(2)}</span>
+                </div>
+                <div className="border-t pt-3">
+                  <div className="flex justify-between text-lg font-bold">
+                    <span>Total:</span>
+                    <span className="text-green-600">R$ {getTotal().toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal de Gestão de Caixa */}
+      {showCashManagement && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-4">Gestão de Caixa</h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">Saldo atual: R$ {cashAmount.toFixed(2)}</p>
+              <input
+                type="number"
+                step="0.01"
+                value={cashAdjustment}
+                onChange={(e) => setCashAdjustment(e.target.value)}
+                className="input w-full"
+                placeholder="Valor para ajustar"
+              />
+            </div>
+            <div className="flex gap-3">
               <button
-                onClick={() => {
-                  const method = document.getElementById('paymentMethod').value;
-                  const amount = document.getElementById('paymentAmount').value;
-                  if (amount) {
-                    addPayment(method, amount);
-                  }
-                }}
-                className="btn btn-primary flex-1"
+                onClick={() => adjustCash('add')}
+                className="btn btn-success flex-1"
               >
                 Adicionar
               </button>
               <button
-                onClick={() => setShowAddPayment(false)}
-                className="btn btn-outline"
+                onClick={() => adjustCash('remove')}
+                className="btn btn-warning flex-1"
+              >
+                Retirar
+              </button>
+              <button
+                onClick={() => setShowCashManagement(false)}
+                className="btn btn-secondary flex-1"
               >
                 Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Impressão */}
+      {showPrintDialog && currentSale && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-4">Opções de Impressão</h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">Deseja imprimir o comprovante?</p>
+              <div className="border rounded p-3 bg-gray-50">
+                <p className="text-sm"><strong>Venda #{currentSale.id}</strong></p>
+                <p className="text-sm">Cliente: {currentSale.customer}</p>
+                <p className="text-sm">Total: R$ {currentSale.total.toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => printReceipt('thermal')}
+                className="btn btn-primary flex-1"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Impressora Térmica
+              </button>
+              <button
+                onClick={() => printReceipt('a4')}
+                className="btn btn-secondary flex-1"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Impressora A4
+              </button>
+              <button
+                onClick={() => setShowPrintDialog(false)}
+                className="btn btn-outline flex-1"
+              >
+                Não Imprimir
               </button>
             </div>
           </div>

@@ -9,16 +9,17 @@ const productSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    required: true,
+    required: [true, 'Descrição é obrigatória'],
     trim: true
   },
   brand: {
     type: String,
+    required: [true, 'Marca é obrigatória'],
     trim: true
   },
   group: {
     type: String,
-    required: true,
+    required: [true, 'Grupo é obrigatório'],
     trim: true
   },
   subgroup: {
@@ -27,32 +28,34 @@ const productSchema = new mongoose.Schema({
   },
   quantity: {
     type: Number,
-    required: true,
-    min: 0,
-    default: 0
+    required: [true, 'Quantidade é obrigatória'],
+    min: [0, 'Quantidade não pode ser negativa']
   },
   unit: {
     type: String,
     enum: ['UND', 'KG', 'PCT'],
-    required: true,
+    required: [true, 'Unidade é obrigatória'],
     default: 'UND'
   },
   costPrice: {
     type: Number,
-    required: true,
-    min: 0
+    required: [true, 'Preço de custo é obrigatório'],
+    min: [0, 'Preço de custo não pode ser negativo']
   },
   salePrice: {
     type: Number,
-    required: true,
-    min: 0
+    required: [true, 'Preço de venda é obrigatório'],
+    min: [0, 'Preço de venda não pode ser negativo']
   },
-  minQuantity: {
+  minStock: {
     type: Number,
-    default: 0
+    default: 0,
+    min: [0, 'Estoque mínimo não pode ser negativo']
   },
-  maxQuantity: {
-    type: Number
+  maxStock: {
+    type: Number,
+    default: 0,
+    min: [0, 'Estoque máximo não pode ser negativo']
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -67,9 +70,20 @@ const productSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  deletedAt: {
-    type: Date
-  },
+  stockMovements: [{
+    type: {
+      type: String,
+      enum: ['entry', 'exit', 'adjustment'],
+      required: true
+    },
+    quantity: { type: Number, required: true },
+    reason: { type: String, required: true },
+    date: { type: Date, default: Date.now },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }],
   totalSold: {
     type: Number,
     default: 0
@@ -86,16 +100,47 @@ const productSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+}, {
+  timestamps: true
 });
 
-productSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
-});
+productSchema.methods.addStock = function(quantity, reason, userId) {
+  this.quantity += quantity;
+  this.totalEntries += quantity;
+  this.stockMovements.push({
+    type: 'entry',
+    quantity,
+    reason,
+    user: userId
+  });
+  return this.save();
+};
 
-// Index for faster searches
-productSchema.index({ company: 1, barcode: 1 });
-productSchema.index({ company: 1, description: 1 });
-productSchema.index({ company: 1, group: 1 });
+productSchema.methods.removeStock = function(quantity, reason, userId) {
+  if (this.quantity >= quantity) {
+    this.quantity -= quantity;
+    this.totalSold += quantity;
+    this.stockMovements.push({
+      type: 'exit',
+      quantity,
+      reason,
+      user: userId
+    });
+    return this.save();
+  }
+  throw new Error('Estoque insuficiente');
+};
+
+productSchema.methods.adjustStock = function(newQuantity, reason, userId) {
+  const adjustment = newQuantity - this.quantity;
+  this.quantity = newQuantity;
+  this.stockMovements.push({
+    type: 'adjustment',
+    quantity: adjustment,
+    reason,
+    user: userId
+  });
+  return this.save();
+};
 
 module.exports = mongoose.model('Product', productSchema);

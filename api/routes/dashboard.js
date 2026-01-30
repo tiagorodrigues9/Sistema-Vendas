@@ -3,224 +3,392 @@ const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
 const Entry = require('../models/Entry');
-const { auth, authorize } = require('../middleware/auth');
-
+const Receivable = require('../models/Receivable');
+const { auth, authorizeOwnerOrAdmin } = require('../middleware/auth');
 const router = express.Router();
 
-// Get dashboard data
-router.get('/', auth, authorize('canViewDashboard'), async (req, res) => {
+router.get('/overview', auth, async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     
-    // Date range
-    const dateFilter = {};
-    if (startDate || endDate) {
-      dateFilter.$gte = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-      dateFilter.$lte = endDate ? new Date(endDate + 'T23:59:59.999Z') : new Date();
-    }
+    const startOfDay = new Date(today.toISOString().split('T')[0] + 'T00:00:00');
+    const endOfDay = new Date(today.toISOString().split('T')[0] + 'T23:59:59');
 
-    // Sales data
-    const salesMatch = {
-      company: req.user.company,
-      status: 'completed'
-    };
-    
-    if (Object.keys(dateFilter).length > 0) {
-      salesMatch.saleDate = dateFilter;
-    }
-
-    const salesData = await Sale.aggregate([
-      { $match: salesMatch },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: 1 },
-          totalRevenue: { $sum: '$total' },
-          avgTicket: { $avg: '$total' }
-        }
-      }
-    ]);
-
-    // Payment methods
-    const paymentMethods = await Sale.aggregate([
-      { $match: salesMatch },
-      { $unwind: '$payments' },
-      {
-        $group: {
-          _id: '$payments.method',
-          total: { $sum: '$payments.amount' }
-        }
-      }
-    ]);
-
-    // Top products
-    const topProducts = await Sale.aggregate([
-      { $match: salesMatch },
-      { $unwind: '$items' },
-      {
-        $group: {
-          _id: '$items.product',
-          totalSold: { $sum: '$items.quantity' },
-          totalRevenue: { $sum: '$items.totalPrice' }
-        }
-      },
-      { $sort: { totalSold: -1 } },
-      { $limit: 10 },
-      {
-        $lookup: {
-          from: 'products',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'product'
-        }
-      },
-      { $unwind: '$product' }
-    ]);
-
-    // Top customers
-    const topCustomers = await Sale.aggregate([
-      { $match: salesMatch },
-      {
-        $group: {
-          _id: '$customer',
-          totalPurchases: { $sum: 1 },
-          totalSpent: { $sum: '$total' }
-        }
-      },
-      { $sort: { totalSpent: -1 } },
-      { $limit: 10 },
-      {
-        $lookup: {
-          from: 'customers',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'customer'
-        }
-      },
-      { $unwind: '$customer' }
-    ]);
-
-    // Low stock products
-    const lowStock = await Product.find({
-      company: req.user.company,
-      isDeleted: false,
-      $expr: { $lte: ['$quantity', '$minQuantity'] }
-    }).limit(10);
-
-    // Monthly sales trend
-    const monthlySales = await Sale.aggregate([
-      { $match: salesMatch },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$saleDate' },
-            month: { $month: '$saleDate' }
-          },
-          total: { $sum: '$total' },
-          count: { $sum: 1 }
-        }
-      },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    const [
+      totalSales,
+      monthlySales,
+      todaySales,
+      lowStockProducts,
+      totalCustomers,
+      pendingReceivables
+    ] = await Promise.all([
+      Sale.countDocuments({ company: req.company._id, status: 'completed' }),
+      Sale.aggregate([
+        { $match: { 
+          company: req.company._id,
+          status: 'completed',
+          createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+        }},
+        { $group: { _id: null, total: { $sum: '$total' }, count: { $sum: 1 } } }
+      ]),
+      Sale.aggregate([
+        { $match: { 
+          company: req.company._id,
+          status: 'completed',
+          createdAt: { $gte: startOfDay, $lte: endOfDay }
+        }},
+        { $group: { _id: null, total: { $sum: '$total' }, count: { $sum: 1 } } }
+      ]),
+      Product.countDocuments({ 
+        company: req.company._id,
+        isDeleted: false,
+        $expr: { $lte: ['$quantity', '$minStock'] }
+      }),
+      Customer.countDocuments({ 
+        company: req.company._id,
+        isDeleted: false 
+      }),
+      Receivable.aggregate([
+        { $match: { 
+          company: req.company._id,
+          status: { $in: ['pending', 'overdue'] }
+        }},
+        { $group: { _id: null, total: { $sum: '$currentAmount' }, count: { $sum: 1 } } }
+      ])
     ]);
 
     res.json({
-      salesData: salesData[0] || { totalSales: 0, totalRevenue: 0, avgTicket: 0 },
-      paymentMethods,
-      topProducts,
-      topCustomers,
-      lowStock,
-      monthlySales
+      totalSales,
+      monthlySales: monthlySales[0] || { total: 0, count: 0 },
+      todaySales: todaySales[0] || { total: 0, count: 0 },
+      lowStockProducts,
+      totalCustomers,
+      pendingReceivables: pendingReceivables[0] || { total: 0, count: 0 }
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao obter visão geral:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get sales report
-router.get('/sales', auth, authorize('canViewReports'), async (req, res) => {
+router.get('/sales/monthly', auth, async (req, res) => {
   try {
-    const { startDate, endDate, format } = req.query;
-    
-    const match = {
-      company: req.user.company,
-      status: 'completed'
-    };
+    const year = req.query.year || new Date().getFullYear();
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year, 11, 31);
 
-    if (startDate || endDate) {
-      match.saleDate = {};
-      if (startDate) match.saleDate.$gte = new Date(startDate);
-      if (endDate) match.saleDate.$lte = new Date(endDate + 'T23:59:59.999Z');
+    const sales = await Sale.aggregate([
+      { $match: { 
+        company: req.company._id,
+        status: 'completed',
+        createdAt: { $gte: startDate, $lte: endDate }
+      }},
+      { $group: {
+        _id: { $month: '$createdAt' },
+        total: { $sum: '$total' },
+        count: { $sum: 1 }
+      }},
+      { $sort: { '_id': 1 } }
+    ]);
+
+    const monthlyData = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      monthName: new Date(year, i).toLocaleDateString('pt-BR', { month: 'long' }),
+      total: 0,
+      count: 0
+    }));
+
+    sales.forEach(sale => {
+      monthlyData[sale._id - 1] = {
+        ...monthlyData[sale._id - 1],
+        total: sale.total,
+        count: sale.count
+      };
+    });
+
+    res.json({ year, data: monthlyData });
+  } catch (error) {
+    console.error('Erro ao obter vendas mensais:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/sales/top-products', auth, async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    
+    let startDate;
+    const endDate = new Date();
+    
+    switch (period) {
+      case 'week':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
     }
 
-    const sales = await Sale.find(match)
-      .populate('customer', 'name document')
-      .populate('user', 'name')
-      .sort({ saleDate: -1 });
+    const topProducts = await Sale.aggregate([
+      { $match: { 
+        company: req.company._id,
+        status: 'completed',
+        createdAt: { $gte: startDate, $lte: endDate }
+      }},
+      { $unwind: '$items' },
+      { $group: {
+        _id: '$items.description',
+        totalQuantity: { $sum: '$items.quantity' },
+        totalValue: { $sum: '$items.total' },
+        count: { $sum: 1 }
+      }},
+      { $sort: { totalQuantity: -1 } },
+      { $limit: 10 }
+    ]);
+
+    res.json({ period, data: topProducts });
+  } catch (error) {
+    console.error('Erro ao obter produtos mais vendidos:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/sales/top-customers', auth, async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    
+    let startDate;
+    const endDate = new Date();
+    
+    switch (period) {
+      case 'week':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const topCustomers = await Sale.aggregate([
+      { $match: { 
+        company: req.company._id,
+        status: 'completed',
+        createdAt: { $gte: startDate, $lte: endDate },
+        customer: { $ne: 'CONSUMIDOR' }
+      }},
+      { $group: {
+        _id: '$customerName',
+        totalValue: { $sum: '$total' },
+        count: { $sum: 1 }
+      }},
+      { $sort: { totalValue: -1 } },
+      { $limit: 10 }
+    ]);
+
+    res.json({ period, data: topCustomers });
+  } catch (error) {
+    console.error('Erro ao obter clientes que mais compram:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/inventory/low-stock', auth, async (req, res) => {
+  try {
+    const lowStockProducts = await Product.find({
+      company: req.company._id,
+      isDeleted: false,
+      $expr: { $lte: ['$quantity', '$minStock'] }
+    })
+    .select('description quantity minStock unit barcode')
+    .sort({ quantity: 1 })
+    .limit(20);
+
+    res.json(lowStockProducts);
+  } catch (error) {
+    console.error('Erro ao obter produtos com estoque baixo:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/inventory/movements', auth, async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    
+    let startDate;
+    const endDate = new Date();
+    
+    switch (period) {
+      case 'week':
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const movements = await Product.aggregate([
+      { $match: { company: req.company._id } },
+      { $unwind: '$stockMovements' },
+      { $match: { 'stockMovements.date': { $gte: startDate, $lte: endDate } } },
+      { $group: {
+        _id: '$stockMovements.type',
+        count: { $sum: 1 },
+        totalQuantity: { $sum: '$stockMovements.quantity' }
+      }}
+    ]);
+
+    res.json({ period, data: movements });
+  } catch (error) {
+    console.error('Erro ao obter movimentações de estoque:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/financial/receivables', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const receivables = await Receivable.aggregate([
+      { $match: { company: req.company._id } },
+      { $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        total: { $sum: '$currentAmount' }
+      }}
+    ]);
+
+    const overdueReceivables = await Receivable.find({
+      company: req.company._id,
+      status: 'pending',
+      dueDate: { $lt: new Date() }
+    }).select('customerName dueDate currentAmount');
+
+    res.json({
+      summary: receivables,
+      overdue: overdueReceivables
+    });
+  } catch (error) {
+    console.error('Erro ao obter contas a receber:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/reports/export', auth, async (req, res) => {
+  try {
+    const { type, startDate, endDate, format = 'json' } = req.query;
+    
+    if (!type || !startDate || !endDate) {
+      return res.status(400).json({ 
+        message: 'Tipo, data inicial e final são obrigatórios' 
+      });
+    }
+
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T23:59:59');
+
+    let data;
+    switch (type) {
+      case 'sales':
+        data = await Sale.find({
+          company: req.company._id,
+          createdAt: { $gte: start, $lte: end }
+        })
+        .populate('customer', 'name document')
+        .populate('user', 'name')
+        .sort({ createdAt: -1 });
+        break;
+      
+      case 'products':
+        data = await Product.find({
+          company: req.company._id,
+          isDeleted: false
+        })
+        .select('description quantity costPrice salePrice totalSold totalEntries')
+        .sort({ description: 1 });
+        break;
+      
+      case 'customers':
+        data = await Customer.find({
+          company: req.company._id,
+          isDeleted: false
+        })
+        .select('name document email totalPurchases purchaseHistory')
+        .sort({ name: 1 });
+        break;
+      
+      case 'entries':
+        data = await Entry.find({
+          company: req.company._id,
+          createdAt: { $gte: start, $lte: end }
+        })
+        .populate('user', 'name')
+        .sort({ createdAt: -1 });
+        break;
+      
+      default:
+        return res.status(400).json({ message: 'Tipo de relatório inválido' });
+    }
 
     if (format === 'csv') {
-      // CSV format
-      const csv = [
-        ['Data', 'Número', 'Cliente', 'Vendedor', 'Total', 'Forma Pagamento'].join(','),
-        ...sales.map(sale => [
-          sale.saleDate.toLocaleDateString('pt-BR'),
-          sale.saleNumber,
-          sale.customerName,
-          sale.userName,
-          sale.total.toFixed(2),
-          sale.payments.map(p => p.method).join(';')
-        ].join(','))
-      ].join('\n');
-
+      const csv = convertToCSV(data);
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=vendas.csv');
-      return res.send(csv);
+      res.setHeader('Content-Disposition', `attachment; filename=${type}_${startDate}_${endDate}.csv`);
+      res.send(csv);
+    } else {
+      res.json({ type, period: { startDate, endDate }, data });
     }
-
-    res.json(sales);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao exportar relatório:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get products report
-router.get('/products', auth, authorize('canViewReports'), async (req, res) => {
-  try {
-    const products = await Product.find({
-      company: req.user.company,
-      isDeleted: false
-    }).sort({ description: 1 });
-
-    res.json(products);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
-
-// Get entries report
-router.get('/entries', auth, authorize('canViewReports'), async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    
-    const match = { company: req.user.company };
-
-    if (startDate || endDate) {
-      match.entryDate = {};
-      if (startDate) match.entryDate.$gte = new Date(startDate);
-      if (endDate) match.entryDate.$lte = new Date(endDate + 'T23:59:59.999Z');
-    }
-
-    const entries = await Entry.find(match)
-      .populate('user', 'name')
-      .sort({ entryDate: -1 });
-
-    res.json(entries);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
+function convertToCSV(data) {
+  if (!data || data.length === 0) return '';
+  
+  const headers = Object.keys(data[0].toObject());
+  const csvHeaders = headers.join(',');
+  
+  const csvRows = data.map(item => {
+    const values = headers.map(header => {
+      const value = item[header];
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'object' && value.constructor === Object) {
+        return JSON.stringify(value);
+      }
+      return `"${value}"`;
+    });
+    return values.join(',');
+  });
+  
+  return [csvHeaders, ...csvRows].join('\n');
+}
 
 module.exports = router;

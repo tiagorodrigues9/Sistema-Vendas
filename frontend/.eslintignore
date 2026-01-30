@@ -1,6 +1,0 @@
-# Ignore ESLint warnings for now
-src/pages/Admin.js
-src/pages/Customers.js
-src/pages/Entries.js
-src/pages/Receivables.js
-src/pages/Sales.js

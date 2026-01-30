@@ -4,12 +4,32 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Production builds
+/frontend/build
+/frontend/dist
+
 # Environment variables
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Logs
 logs
@@ -23,23 +43,13 @@ pids
 
 # Coverage directory used by tools like istanbul
 coverage/
+*.lcov
 
 # nyc test coverage
 .nyc_output
 
-# Grunt intermediate storage
-.grunt
-
-# Bower dependency directory
-bower_components
-
-# node-waf configuration
-.lock-wscript
-
-# Compiled binary addons
-build/Release
-
 # Dependency directories
+node_modules/
 jspm_packages/
 
 # Optional npm cache directory
@@ -47,6 +57,15 @@ jspm_packages/
 
 # Optional eslint cache
 .eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
 
 # Output of 'npm pack'
 *.tgz
@@ -58,7 +77,7 @@ jspm_packages/
 .env
 .env.test
 
-# parcel-bundler cache
+# parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
 
@@ -82,21 +101,97 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS generated files
-Thumbs.db
-.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 
-# Uploads
+# Uploads and media
 uploads/
 public/uploads/
+media/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Lock files (keep package-lock.json but ignore yarn.lock if using npm)
+yarn.lock
+
+# Test files
+test-results/
+coverage/
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+
+# Kubernetes
+*.yaml
+*.yml
+!k8s/
+!kubernetes/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Ansible
+*.retry
+
+# Local development
+.local
+local/
+
+# API documentation
+docs/api/
+
+# Generated files
+generated/
+auto-generated/
+
+# Security files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Monitoring and analytics
+*.log
+*.trace
+
+# Build artifacts
+*.tar.gz
+*.zip
+*.rar
+
+# Configuration overrides
+config/local.js
+config/development.js
+config/production.js
+
+# Session storage
+sessions/
+*.session
+
+# Cache
+.cache/
+.cache-loader/
+
+# Temporary build files
+.tmp/
+.temp/

@@ -1,31 +1,42 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
 const Sale = require('../models/Sale');
-const Customer = require('../models/Customer');
 const Product = require('../models/Product');
-const CashRegister = require('../models/CashRegister');
-const { auth, authorize } = require('../middleware/auth');
-const { generateSaleNumber } = require('../utils/helpers');
-
+const Customer = require('../models/Customer');
+const Receivable = require('../models/Receivable');
+const { auth } = require('../middleware/auth');
+const { validateSale } = require('../middleware/validation');
 const router = express.Router();
 
-// Get all sales
-router.get('/', auth, authorize('canMakeSales'), async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, startDate, endDate, customer, status } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      startDate = '', 
+      endDate = '', 
+      status = '' 
+    } = req.query;
     
-    const query = { company: req.user.company };
-
+    const query = { company: req.company._id };
+    
+    if (search) {
+      query.$or = [
+        { saleNumber: { $regex: search, $options: 'i' } },
+        { customerName: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
     if (startDate || endDate) {
-      query.saleDate = {};
-      if (startDate) query.saleDate.$gte = new Date(startDate);
-      if (endDate) query.saleDate.$lte = new Date(endDate + 'T23:59:59.999Z');
+      query.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate + 'T23:59:59');
+      }
     }
-
-    if (customer) {
-      query.customer = customer;
-    }
-
+    
     if (status) {
       query.status = status;
     }
@@ -33,9 +44,9 @@ router.get('/', auth, authorize('canMakeSales'), async (req, res) => {
     const sales = await Sale.find(query)
       .populate('customer', 'name document')
       .populate('user', 'name')
-      .sort({ saleDate: -1 })
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 });
 
     const total = await Sale.countDocuments(query);
 
@@ -46,368 +57,322 @@ router.get('/', auth, authorize('canMakeSales'), async (req, res) => {
       total
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao listar vendas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get sale by ID
-router.get('/:id', auth, authorize('canMakeSales'), async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id)
-      .populate('customer', 'name document phone address')
-      .populate('user', 'name');
-    
+    const sale = await Sale.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    })
+      .populate('customer', 'name document email phone')
+      .populate('user', 'name')
+      .populate('items.product', 'description barcode unit');
+
     if (!sale) {
       return res.status(404).json({ message: 'Venda não encontrada' });
-    }
-
-    // Check if sale belongs to user's company
-    if (sale.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Sem permissão para visualizar esta venda' });
     }
 
     res.json(sale);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao obter venda:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Create sale
-router.post('/', auth, authorize('canMakeSales'), [
-  body('customer').notEmpty().withMessage('Cliente é obrigatório'),
-  body('items').isArray({ min: 1 }).withMessage('Itens são obrigatórios'),
-  body('items.*.product').notEmpty().withMessage('Produto é obrigatório'),
-  body('items.*.quantity').isNumeric().withMessage('Quantidade deve ser um número'),
-  body('items.*.unitPrice').isNumeric().withMessage('Preço unitário deve ser um número'),
-  body('payments').isArray({ min: 1 }).withMessage('Pagamentos são obrigatórios'),
-  body('payments.*.method').isIn(['cash', 'credit_card', 'debit_card', 'pix', 'bank_slip', 'promissory_note', 'installment']).withMessage('Método de pagamento inválido'),
-  body('payments.*.amount').isNumeric().withMessage('Valor do pagamento deve ser um número')
-], async (req, res) => {
+router.post('/', auth, validateSale, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    const { customer, items, payments, discount = 0, notes } = req.body;
+
+    const company = req.company;
+    if (!company.settings.cashRegister.isOpen) {
+      return res.status(400).json({ message: 'Caixa não está aberto' });
     }
 
-    const { customer, items, payments, observations } = req.body;
-
-    // Get customer
-    const customerDoc = await Customer.findById(customer);
-    if (!customerDoc) {
-      return res.status(404).json({ message: 'Cliente não encontrado' });
+    let customerData;
+    if (customer === 'CONSUMIDOR') {
+      customerData = {
+        _id: 'CONSUMIDOR',
+        name: 'CONSUMIDOR',
+        document: '00000000000'
+      };
+    } else {
+      customerData = await Customer.findOne({ 
+        _id: customer,
+        company: req.company._id 
+      });
+      
+      if (!customerData) {
+        return res.status(404).json({ message: 'Cliente não encontrado' });
+      }
     }
-
-    // Check if customer belongs to user's company
-    if (customerDoc.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Cliente não pertence à sua empresa' });
-    }
-
-    // Validate items and calculate totals
-    let subtotal = 0;
-    const validatedItems = [];
 
     for (const item of items) {
-      const product = await Product.findById(item.product);
+      const product = await Product.findOne({ 
+        _id: item.product,
+        company: req.company._id 
+      });
       
       if (!product) {
-        return res.status(404).json({ message: `Produto ${item.product} não encontrado` });
+        return res.status(404).json({ message: `Produto não encontrado: ${item.product}` });
       }
-
-      if (product.company.toString() !== req.user.company.toString()) {
-        return res.status(403).json({ message: `Produto ${product.description} não pertence à sua empresa` });
-      }
-
-      if (product.quantity < item.quantity) {
-        return res.status(400).json({ message: `Estoque insuficiente para o produto ${product.description}` });
-      }
-
-      const itemTotal = item.unitPrice * item.quantity;
-      subtotal += itemTotal;
-
-      validatedItems.push({
-        product: product._id,
-        barcode: product.barcode || '',
-        description: product.description,
-        unit: product.unit,
-        unitPrice: item.unitPrice,
-        quantity: item.quantity,
-        totalPrice: itemTotal
-      });
-
-      // Update product stock
-      product.quantity -= item.quantity;
-      product.totalSold += item.quantity;
-      await product.save();
-    }
-
-    // Validate payments
-    let totalPaid = 0;
-    const validatedPayments = [];
-
-    for (const payment of payments) {
-      totalPaid += payment.amount;
       
-      const paymentData = {
-        method: payment.method,
-        amount: payment.amount,
-        status: 'paid'
-      };
-
-      if (payment.method === 'installment') {
-        paymentData.installments = payment.installments || 1;
-        paymentData.status = 'pending';
-        // Set due dates for installments
-        const dueDate = new Date();
-        dueDate.setMonth(dueDate.getMonth() + 1);
-        paymentData.dueDate = dueDate;
+      if (product.quantity < item.quantity) {
+        return res.status(400).json({ 
+          message: `Estoque insuficiente para o produto: ${product.description}` 
+        });
       }
-
-      validatedPayments.push(paymentData);
+      
+      item.barcode = product.barcode || '';
+      item.description = product.description;
+      item.unitPrice = product.salePrice;
+      item.total = item.unitPrice * item.quantity;
     }
 
-    if (totalPaid < subtotal) {
+    const saleData = {
+      customer: customerData._id,
+      customerName: customerData.name,
+      items,
+      discount,
+      company: req.company._id,
+      user: req.user._id,
+      cashRegister: {
+        isOpen: company.settings.cashRegister.isOpen,
+        openingTime: company.settings.cashRegister.openingTime
+      },
+      notes
+    };
+
+    saleData.calculateTotal();
+    saleData.processPayment(payments);
+
+    const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    if (totalPaid < saleData.total) {
       return res.status(400).json({ message: 'Valor pago é insuficiente' });
     }
 
-    const change = totalPaid - subtotal;
-
-    // Create sale
-    const sale = new Sale({
-      saleNumber: generateSaleNumber(),
-      customer: customerDoc._id,
-      customerName: customerDoc.name,
-      company: req.user.company,
-      user: req.user._id,
-      userName: req.user.name,
-      items: validatedItems,
-      subtotal,
-      discount: 0,
-      total: subtotal,
-      payments: validatedPayments,
-      change,
-      observations
-    });
-
+    const sale = new Sale(saleData);
     await sale.save();
 
-    // Update customer stats
-    customerDoc.totalPurchases += 1;
-    customerDoc.totalSpent += subtotal;
-    await customerDoc.save();
+    for (const item of items) {
+      await Product.findById(item.product).then(product => {
+        return product.removeStock(item.quantity, `Venda: ${sale.saleNumber}`, req.user._id);
+      });
+    }
 
-    res.status(201).json({
-      message: 'Venda realizada com sucesso',
-      sale
-    });
+    if (customerData._id !== 'CONSUMIDOR') {
+      await customerData.addPurchase(sale._id, sale.total);
+    }
+
+    const hasReceivable = payments.some(payment => 
+      ['boleto', 'promissoria', 'parcelado'].includes(payment.method)
+    );
+
+    if (hasReceivable) {
+      const receivablePayments = payments.filter(payment => 
+        ['boleto', 'promissoria', 'parcelado'].includes(payment.method)
+      );
+
+      for (const payment of receivablePayments) {
+        const receivable = new Receivable({
+          sale: sale._id,
+          saleNumber: sale.saleNumber,
+          customer: customerData._id,
+          customerName: customerData.name,
+          paymentMethod: payment.method,
+          originalAmount: payment.amount,
+          currentAmount: payment.amount,
+          dueDate: payment.dueDate,
+          company: req.company._id
+        });
+
+        if (payment.method === 'parcelado' && payment.installments > 1) {
+          const installmentAmount = payment.amount / payment.installments;
+          const installments = [];
+          
+          for (let i = 1; i <= payment.installments; i++) {
+            const dueDate = new Date();
+            dueDate.setMonth(dueDate.getMonth() + i);
+            
+            installments.push({
+              number: i,
+              amount: installmentAmount,
+              dueDate,
+              status: 'pending'
+            });
+          }
+          
+          receivable.installments = installments;
+        }
+
+        await receivable.save();
+      }
+    }
+
+    company.settings.cashRegister.currentAmount += sale.total;
+    await company.save();
+
+    const populatedSale = await Sale.findById(sale._id)
+      .populate('customer', 'name document')
+      .populate('user', 'name')
+      .populate('items.product', 'description barcode unit');
+
+    res.status(201).json(populatedSale);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao criar venda:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Cancel sale
-router.put('/:id/cancel', auth, authorize('canMakeSales'), async (req, res) => {
+router.put('/:id/cancel', auth, async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id);
+    const { reason } = req.body;
     
+    const sale = await Sale.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
     if (!sale) {
       return res.status(404).json({ message: 'Venda não encontrada' });
     }
 
-    // Check if sale belongs to user's company
-    if (sale.company.toString() !== req.user.company.toString()) {
-      return res.status(403).json({ message: 'Sem permissão para cancelar esta venda' });
-    }
-
     if (sale.status === 'cancelled') {
-      return res.status(400).json({ message: 'Venda já cancelada' });
+      return res.status(400).json({ message: 'Venda já está cancelada' });
     }
 
-    // Restore product stock
+    await sale.cancel(req.user._id, reason);
+
     for (const item of sale.items) {
-      const product = await Product.findById(item.product);
-      if (product) {
-        product.quantity += item.quantity;
-        product.totalSold -= item.quantity;
-        await product.save();
-      }
+      await Product.findById(item.product).then(product => {
+        return product.addStock(item.quantity, `Cancelamento venda: ${sale.saleNumber}`, req.user._id);
+      });
     }
 
-    // Update customer stats
-    const customer = await Customer.findById(sale.customer);
-    if (customer) {
-      customer.totalPurchases -= 1;
-      customer.totalSpent -= sale.total;
-      await customer.save();
-    }
+    const company = req.company;
+    company.settings.cashRegister.currentAmount -= sale.total;
+    await company.save();
 
-    sale.status = 'cancelled';
-    await sale.save();
+    await Receivable.updateMany(
+      { sale: sale._id },
+      { status: 'cancelled', notes: reason }
+    );
 
-    res.json({
-      message: 'Venda cancelada com sucesso',
-      sale
-    });
+    res.json({ message: 'Venda cancelada com sucesso', sale });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao cancelar venda:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Get today's sales
-router.get('/today/summary', auth, authorize('canMakeSales'), async (req, res) => {
+router.get('/report/daily', auth, async (req, res) => {
   try {
-    const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const { date = new Date().toISOString().split('T')[0] } = req.query;
+    
+    const startOfDay = new Date(date + 'T00:00:00');
+    const endOfDay = new Date(date + 'T23:59:59');
 
     const sales = await Sale.find({
-      company: req.user.company,
-      saleDate: { $gte: startOfDay, $lt: endOfDay },
+      company: req.company._id,
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
       status: 'completed'
-    });
+    }).populate('user', 'name');
 
     const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalCash = sales.reduce((sum, sale) => {
-      const cashPayments = sale.payments.filter(p => p.method === 'cash');
-      return sum + cashPayments.reduce((s, p) => s + p.amount, 0);
-    }, 0);
-    const totalCard = sales.reduce((sum, sale) => {
-      const cardPayments = sale.payments.filter(p => ['credit_card', 'debit_card'].includes(p.method));
-      return sum + cardPayments.reduce((s, p) => s + p.amount, 0);
-    }, 0);
+    const totalValue = sales.reduce((sum, sale) => sum + sale.total, 0);
+    const totalDiscount = sales.reduce((sum, sale) => sum + sale.discount, 0);
+
+    const paymentMethods = {};
+    sales.forEach(sale => {
+      sale.payments.forEach(payment => {
+        if (!paymentMethods[payment.method]) {
+          paymentMethods[payment.method] = 0;
+        }
+        paymentMethods[payment.method] += payment.amount;
+      });
+    });
 
     res.json({
+      date,
       totalSales,
-      totalRevenue,
-      totalCash,
-      totalCard,
-      totalOther: totalRevenue - totalCash - totalCard
+      totalValue,
+      totalDiscount,
+      paymentMethods,
+      sales
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao gerar relatório diário:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
-// Open cash register
-router.post('/cash-register/open', auth, authorize('canMakeSales'), [
-  body('openingBalance').isNumeric().withMessage('Saldo inicial deve ser um número')
-], async (req, res) => {
+router.get('/report/period', auth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'Data inicial e final são obrigatórias' });
     }
 
-    const { openingBalance } = req.body;
-
-    // Check if there's an open cash register
-    const openRegister = await CashRegister.findOne({
-      company: req.user.company,
-      user: req.user._id,
-      status: 'open'
-    });
-
-    if (openRegister) {
-      return res.status(400).json({ message: 'Caixa já aberto' });
-    }
-
-    const cashRegister = new CashRegister({
-      company: req.user.company,
-      user: req.user._id,
-      userName: req.user.name,
-      openingBalance,
-      status: 'open'
-    });
-
-    await cashRegister.save();
-
-    res.status(201).json({
-      message: 'Caixa aberto com sucesso',
-      cashRegister
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
-
-// Close cash register
-router.put('/cash-register/close', auth, authorize('canMakeSales'), async (req, res) => {
-  try {
-    const cashRegister = await CashRegister.findOne({
-      company: req.user.company,
-      user: req.user._id,
-      status: 'open'
-    });
-
-    if (!cashRegister) {
-      return res.status(404).json({ message: 'Caixa não encontrado ou já fechado' });
-    }
-
-    // Calculate totals
-    const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T23:59:59');
 
     const sales = await Sale.find({
-      company: req.user.company,
-      user: req.user._id,
-      saleDate: { $gte: startOfDay, $lt: endOfDay },
+      company: req.company._id,
+      createdAt: { $gte: start, $lte: end },
       status: 'completed'
+    }).populate('user', 'name').populate('customer', 'name');
+
+    const totalSales = sales.length;
+    const totalValue = sales.reduce((sum, sale) => sum + sale.total, 0);
+    const totalDiscount = sales.reduce((sum, sale) => sum + sale.discount, 0);
+
+    const dailySales = {};
+    sales.forEach(sale => {
+      const date = sale.createdAt.toISOString().split('T')[0];
+      if (!dailySales[date]) {
+        dailySales[date] = { count: 0, total: 0 };
+      }
+      dailySales[date].count++;
+      dailySales[date].total += sale.total;
     });
 
-    const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalCash = sales.reduce((sum, sale) => {
-      const cashPayments = sale.payments.filter(p => p.method === 'cash');
-      return sum + cashPayments.reduce((s, p) => s + p.amount, 0);
-    }, 0);
-    const totalCard = sales.reduce((sum, sale) => {
-      const cardPayments = sale.payments.filter(p => ['credit_card', 'debit_card'].includes(p.method));
-      return sum + cardPayments.reduce((s, p) => s + p.amount, 0);
-    }, 0);
+    const topProducts = {};
+    sales.forEach(sale => {
+      sale.items.forEach(item => {
+        if (!topProducts[item.description]) {
+          topProducts[item.description] = { quantity: 0, total: 0 };
+        }
+        topProducts[item.description].quantity += item.quantity;
+        topProducts[item.description].total += item.total;
+      });
+    });
 
-    cashRegister.closingDate = new Date();
-    cashRegister.closingBalance = cashRegister.openingBalance + totalCash;
-    cashRegister.totalSales = totalSales;
-    cashRegister.totalCash = totalCash;
-    cashRegister.totalCard = totalCard;
-    cashRegister.totalOther = totalSales - totalCash - totalCard;
-    cashRegister.status = 'closed';
-
-    await cashRegister.save();
+    const topCustomers = {};
+    sales.forEach(sale => {
+      if (!topCustomers[sale.customerName]) {
+        topCustomers[sale.customerName] = { count: 0, total: 0 };
+      }
+      topCustomers[sale.customerName].count++;
+      topCustomers[sale.customerName].total += sale.total;
+    });
 
     res.json({
-      message: 'Caixa fechado com sucesso',
-      cashRegister
+      period: { startDate, endDate },
+      totalSales,
+      totalValue,
+      totalDiscount,
+      dailySales,
+      topProducts,
+      topCustomers,
+      sales
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
-  }
-});
-
-// Get current cash register
-router.get('/cash-register/current', auth, authorize('canMakeSales'), async (req, res) => {
-  try {
-    const cashRegister = await CashRegister.findOne({
-      company: req.user.company,
-      user: req.user._id,
-      status: 'open'
-    });
-
-    if (!cashRegister) {
-      return res.status(404).json({ message: 'Nenhum caixa aberto' });
-    }
-
-    res.json(cashRegister);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao gerar relatório de período:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 

@@ -3,61 +3,37 @@ const mongoose = require('mongoose');
 const customerSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    required: [true, 'Nome é obrigatório'],
     trim: true
   },
   document: {
     type: String,
-    required: true,
+    required: [true, 'CPF/CNPJ é obrigatório'],
+    unique: true,
     trim: true
   },
   documentType: {
     type: String,
-    enum: ['CPF', 'CNPJ'],
+    enum: ['cpf', 'cnpj'],
     required: true
+  },
+  email: {
+    type: String,
+    lowercase: true,
+    trim: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'E-mail inválido']
   },
   phone: {
     type: String,
     trim: true
   },
-  email: {
-    type: String,
-    lowercase: true,
-    trim: true
-  },
   address: {
-    street: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    neighborhood: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    city: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    state: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    zipCode: {
-      type: String,
-      trim: true
-    },
-    number: {
-      type: String,
-      trim: true
-    },
-    complement: {
-      type: String,
-      trim: true
-    }
+    street: { type: String, required: true, trim: true },
+    neighborhood: { type: String, required: true, trim: true },
+    city: { type: String, required: true, trim: true },
+    state: { type: String, trim: true },
+    zipCode: { type: String, trim: true },
+    number: { type: String, trim: true }
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -72,14 +48,15 @@ const customerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  deletedAt: {
-    type: Date
-  },
+  purchaseHistory: [{
+    sale: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Sale'
+    },
+    date: { type: Date, default: Date.now },
+    total: { type: Number, required: true }
+  }],
   totalPurchases: {
-    type: Number,
-    default: 0
-  },
-  totalSpent: {
     type: Number,
     default: 0
   },
@@ -91,15 +68,21 @@ const customerSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+}, {
+  timestamps: true
 });
 
 customerSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
+  if (this.document) {
+    this.documentType = this.document.length === 14 ? 'cnpj' : 'cpf';
+  }
   next();
 });
 
-// Index for faster searches
-customerSchema.index({ company: 1, document: 1 });
-customerSchema.index({ company: 1, name: 1 });
+customerSchema.methods.addPurchase = function(saleId, total) {
+  this.purchaseHistory.push({ sale: saleId, total });
+  this.totalPurchases += total;
+  return this.save();
+};
 
 module.exports = mongoose.model('Customer', customerSchema);

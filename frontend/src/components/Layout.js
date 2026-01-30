@@ -1,196 +1,264 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { 
+  Menu, 
+  X, 
+  ShoppingCart, 
+  Users, 
+  Package, 
+  Truck, 
+  BarChart3, 
+  DollarSign, 
+  Settings, 
+  LogOut,
+  User,
+  Bell,
+  Search
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, DollarSign, Users, Package, ShoppingCart, FileText, Settings, LogOut, Store, Home, BarChart3 } from 'lucide-react';
 
 const Layout = ({ children }) => {
-  const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, company, logout } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
-  const menuItems = [
-    {
-      name: 'Dashboard',
-      icon: Home,
-      path: '/dashboard',
-      permission: 'canViewDashboard'
-    },
-    {
-      name: 'Vendas',
-      icon: ShoppingCart,
-      path: '/sales',
-      permission: 'canMakeSales'
-    },
-    {
-      name: 'Clientes',
-      icon: Users,
-      path: '/customers',
-      permission: 'canManageCustomers'
-    },
-    {
-      name: 'Produtos',
-      icon: Package,
-      path: '/products',
-      permission: 'canManageProducts'
-    },
-    {
-      name: 'Entradas',
-      icon: FileText,
-      path: '/entries',
-      permission: 'canManageEntries'
-    },
-    {
-      name: 'Receber',
-      icon: DollarSign,
-      path: '/receivables',
-      permission: 'canManageReceivables'
-    },
-    {
-      name: 'Admin',
-      icon: Settings,
-      path: '/admin',
-      permission: 'canAccessAdmin'
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  // Menu items conforme especificação
+  const getMenuItems = () => {
+    const baseItems = [
+      {
+        key: 'vendas',
+        label: 'Vendas',
+        icon: ShoppingCart,
+        path: '/vendas'
+      },
+      {
+        key: 'clientes',
+        label: 'Clientes',
+        icon: Users,
+        path: '/clientes'
+      },
+      {
+        key: 'produtos',
+        label: 'Produtos',
+        icon: Package,
+        path: '/produtos'
+      }
+    ];
+
+    // Itens para nível Dono
+    if (user?.role === 'dono' || user?.role === 'administrador') {
+      baseItems.push(
+        {
+          key: 'entradas',
+          label: 'Entrada de produtos',
+          icon: Truck,
+          path: '/entradas'
+        },
+        {
+          key: 'dashboard',
+          label: 'Dashboard',
+          icon: BarChart3,
+          path: '/dashboard'
+        },
+        {
+          key: 'contas-receber',
+          label: 'Contas a Receber',
+          icon: DollarSign,
+          path: '/contas-receber'
+        }
+      );
     }
-  ];
 
-  const filteredMenuItems = menuItems.filter(item => 
-    !item.permission || user?.permissions[item.permission]
-  );
+    // Item apenas para administradores
+    if (user?.role === 'administrador') {
+      baseItems.push({
+        key: 'admin',
+        label: 'Admin',
+        icon: Settings,
+        path: '/admin'
+      });
+    }
+
+    return baseItems;
+  };
+
+  const menuItems = getMenuItems();
+
+  const isActiveRoute = (path) => {
+    return location.pathname === path;
+  };
 
   return (
-    <div className="app-container">
-      {/* Modern Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-72 glass transform transition-all duration-300 ease-in-out ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0 lg:static lg:inset-0`}>
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between h-20 px-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-              <Store className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">PDV Pro</h1>
-              <p className="text-xs text-gray-500">Sistema de Gestão</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-        
-        {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-6">
-          <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-              Menu Principal
-            </h3>
-            <div className="space-y-1">
-              {filteredMenuItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = location.pathname === item.path;
-                
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
-                      isActive
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg transform scale-105'
-                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-                    }`}
-                  >
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all duration-200 ${
-                      isActive ? 'bg-white/20' : 'bg-gray-100 group-hover:bg-gray-200'
-                    }`}>
-                      <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-900'}`} />
-                    </div>
-                    <span className="ml-3">{item.name}</span>
-                    {isActive && (
-                      <div className="ml-auto w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </nav>
-        
-        {/* User Profile */}
-        <div className="p-4 border-t border-gray-200">
-          <div className="flex items-center p-3 rounded-xl bg-gray-50">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center text-white font-semibold">
-              {user?.name?.charAt(0).toUpperCase()}
-            </div>
-            <div className="ml-3 flex-1">
-              <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
-              <p className="text-xs text-gray-500">{user?.company?.name}</p>
-            </div>
-            <button
-              onClick={logout}
-              className="p-2 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all duration-200 group"
-              title="Sair"
-            >
-              <LogOut className="w-5 h-5 text-gray-400 group-hover:text-red-600" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="lg:ml-72">
-        {/* Modern Header */}
-        <header className="glass sticky top-0 z-40 border-b border-gray-200">
-          <div className="flex items-center justify-between h-16 px-6">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <Menu className="w-5 h-5 text-gray-600" />
-            </button>
-            
-            <div className="flex items-center space-x-6">
-              <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600">
-                <BarChart3 className="w-4 h-4" />
-                <span>
-                  {new Date().toLocaleDateString('pt-BR', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </span>
-              </div>
-              
-              <div className="flex items-center space-x-3">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-600">Online</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content Area */}
-        <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-          <div className="p-6">
-            {children}
-          </div>
-        </main>
-      </div>
-
-      {/* Mobile Overlay */}
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div
+        <div 
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
+      {/* Sidebar */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <ShoppingCart className="w-5 h-5 text-white" />
+            </div>
+            <span className="ml-3 text-xl font-semibold text-gray-900">PDV</span>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden text-gray-500 hover:text-gray-700"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <nav className="mt-8 px-4">
+          <div className="space-y-2">
+            {menuItems.map((item) => {
+              const IconComponent = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    navigate(item.path);
+                    setSidebarOpen(false);
+                  }}
+                  className={`
+                    w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors
+                    ${isActiveRoute(item.path)
+                      ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <IconComponent className="w-5 h-5 mr-3" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* User info */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
+          <div className="flex items-center">
+            <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
+              <span className="text-sm font-medium text-gray-700">
+                {user?.name?.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div className="ml-3 flex-1">
+              <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+              <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden text-gray-500 hover:text-gray-700"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+              
+              <div className="ml-4 lg:ml-0">
+                <h1 className="text-lg font-semibold text-gray-900">
+                  {company?.companyName || 'Sistema PDV'}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {/* Search */}
+              <div className="hidden md:block">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar..."
+                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Notifications */}
+              <button className="relative p-2 text-gray-500 hover:text-gray-700">
+                <Bell className="w-5 h-5" />
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              </button>
+
+              {/* User menu */}
+              <div className="relative">
+                <button className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50">
+                  <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-gray-700">
+                      {user?.name?.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="hidden md:block text-left">
+                    <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                    <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Logout */}
+              <button
+                onClick={handleLogout}
+                className="p-2 text-gray-500 hover:text-gray-700"
+                title="Sair"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="py-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              {children}
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
   );
+};
+
+// Helper function to get icon component
+const getIconComponent = (iconName) => {
+  const icons = {
+    ShoppingCart,
+    Users,
+    Package,
+    Truck,
+    BarChart3,
+    DollarSign,
+    Settings,
+    User
+  };
+  return icons[iconName] || ShoppingCart;
 };
 
 export default Layout;
