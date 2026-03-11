@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Menu, 
   X, 
@@ -13,12 +13,15 @@ import {
   LogOut,
   User,
   Bell,
-  Search
+  Search,
+  Database,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [cadastrosOpen, setCadastrosOpen] = useState(false);
   const { user, company, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -48,6 +51,34 @@ const Layout = ({ children }) => {
         label: 'Produtos',
         icon: Package,
         path: '/produtos'
+      },
+      {
+        key: 'cadastros',
+        label: 'Cadastros',
+        icon: Database,
+        hasSubmenu: true,
+        submenu: [
+          {
+            key: 'marcas',
+            label: 'Marcas',
+            path: '/cadastros/marcas'
+          },
+          {
+            key: 'grupos',
+            label: 'Grupos',
+            path: '/cadastros/grupos'
+          },
+          {
+            key: 'subgrupos',
+            label: 'Subgrupos',
+            path: '/cadastros/subgrupos'
+          },
+          {
+            key: 'fornecedores',
+            label: 'Fornecedores',
+            path: '/cadastros/fornecedores'
+          }
+        ]
       }
     ];
 
@@ -89,9 +120,15 @@ const Layout = ({ children }) => {
   };
 
   const menuItems = getMenuItems();
+  // Compatibilidade: garantir que `filteredMenuItems` exista para hot-reloads
+  const filteredMenuItems = menuItems;
 
   const isActiveRoute = (path) => {
     return location.pathname === path;
+  };
+
+  const isSubmenuActive = (submenu) => {
+    return submenu.some(item => location.pathname === item.path);
   };
 
   return (
@@ -128,6 +165,53 @@ const Layout = ({ children }) => {
           <div className="space-y-2">
             {menuItems.map((item) => {
               const IconComponent = item.icon;
+              
+              if (item.hasSubmenu) {
+                return (
+                  <div key={item.key}>
+                    <button
+                      onClick={() => setCadastrosOpen(!cadastrosOpen)}
+                      className={`
+                        w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-lg transition-colors
+                        ${isSubmenuActive(item.submenu)
+                          ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
+                          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center">
+                        <IconComponent className="w-5 h-5 mr-3" />
+                        {item.label}
+                      </div>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${cadastrosOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {cadastrosOpen && (
+                      <div className="ml-8 mt-1 space-y-1">
+                        {item.submenu.map((subItem) => (
+                          <button
+                            key={subItem.key}
+                            onClick={() => {
+                              navigate(subItem.path);
+                              setSidebarOpen(false);
+                            }}
+                            className={`
+                              w-full flex items-center px-4 py-2 text-sm rounded-lg transition-colors
+                              ${isActiveRoute(subItem.path)
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                              }
+                            `}
+                          >
+                            {subItem.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              
               return (
                 <button
                   key={item.key}
@@ -244,21 +328,6 @@ const Layout = ({ children }) => {
       </div>
     </div>
   );
-};
-
-// Helper function to get icon component
-const getIconComponent = (iconName) => {
-  const icons = {
-    ShoppingCart,
-    Users,
-    Package,
-    Truck,
-    BarChart3,
-    DollarSign,
-    Settings,
-    User
-  };
-  return icons[iconName] || ShoppingCart;
 };
 
 export default Layout;

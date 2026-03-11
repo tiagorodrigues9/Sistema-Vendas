@@ -198,6 +198,7 @@ export const LOCAL_STORAGE_KEYS = {
   TOKEN: '@PDV:token',
   USER: '@PDV:user',
   COMPANY: '@PDV:company',
+  REMEMBER_ME: '@PDV:rememberMe',
   THEME: '@PDV:theme',
   LANGUAGE: '@PDV:language',
   SETTINGS: '@PDV:settings'
@@ -206,6 +207,8 @@ export const LOCAL_STORAGE_KEYS = {
 export const ROUTES = {
   LOGIN: '/login',
   REGISTER: '/register',
+  FORGOT_PASSWORD: '/forgot-password',
+  RESET_PASSWORD: '/reset-password',
   DASHBOARD: '/dashboard',
   SALES: '/vendas',
   CUSTOMERS: '/clientes',

@@ -45,6 +45,10 @@
     @apply btn bg-red-600 text-white hover:bg-red-700;
   }
   
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  
   .btn-outline {
     @apply btn border border-gray-300 bg-white hover:bg-gray-50 hover:text-gray-900;
   }

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, Package, BarChart3, Download, Check, PlusCircle, RefreshCw, AlertTriangle } from 'lucide-react';
 import { productsAPI } from '../services/api';
+import { brandsAPI } from '../services/brandsAPI';
+import { productGroupsAPI } from '../services/productGroupsAPI';
+import { productSubgroupsAPI } from '../services/productSubgroupsAPI';
 import toast from 'react-hot-toast';
 
 const Products = () => {
@@ -14,6 +17,11 @@ const Products = () => {
   const [refreshing, setRefreshing] = useState(false);
   
   const [products, setProducts] = useState([]);
+  
+  // Estados para cadastros auxiliares
+  const [brands, setBrands] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [subgroups, setSubgroups] = useState([]);
   
   const [formData, setFormData] = useState({
     barcode: '',
@@ -37,8 +45,11 @@ const Products = () => {
   const loadProducts = async () => {
     try {
       setLoading(true);
+      console.log('Carregando produtos...');
       const response = await productsAPI.getAll();
-      setProducts(response.data.products || []);
+      console.log('Products response:', response);
+      console.log('Products data:', response.data);
+      setProducts(response.data?.products || []);
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
       toast.error('Erro ao carregar produtos');
@@ -48,32 +59,165 @@ const Products = () => {
     }
   };
 
+  // Carregar cadastros auxiliares
+  const loadAuxData = async () => {
+    try {
+      console.log('Carregando dados auxiliares...');
+      const [brandsRes, groupsRes, subgroupsRes] = await Promise.all([
+        brandsAPI.getAll(),
+        productGroupsAPI.getAll(),
+        productSubgroupsAPI.getAll()
+      ]);
+      
+      console.log('Brands response:', brandsRes);
+      console.log('Groups response:', groupsRes);
+      console.log('Subgroups response:', subgroupsRes);
+      
+      setBrands(brandsRes.brands || []);
+      setGroups(groupsRes.groups || []);
+      setSubgroups(subgroupsRes.subgroups || []);
+    } catch (error) {
+      console.error('Erro ao carregar dados auxiliares:', error);
+    }
+  };
+
   useEffect(() => {
     loadProducts();
+    loadAuxData();
   }, []);
 
   // Atualizar dados
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadProducts();
+    await Promise.all([loadProducts(), loadAuxData()]);
     setRefreshing(false);
     toast.success('Dados atualizados');
+  };
+
+  // Função para obter nome da marca pelo ID
+  const getBrandName = (brandId) => {
+    if (!brandId) return 'N/A';
+    const brand = brands.find(b => b._id === brandId);
+    return brand ? brand.name : 'N/A';
+  };
+
+  // Função para obter nome do grupo pelo ID
+  const getGroupName = (groupId) => {
+    if (!groupId) return 'N/A';
+    const group = groups.find(g => g._id === groupId);
+    return group ? group.name : 'N/A';
   };
 
   // Filtrar produtos
   const filteredProducts = products.filter(product =>
     product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.group?.toLowerCase().includes(searchTerm.toLowerCase())
+    getBrandName(product.brand)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getGroupName(product.group)?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Formatar valor
+  // Estado para controlar o valor digitado nos campos
+  const [costPriceInput, setCostPriceInput] = useState('');
+  const [salePriceInput, setSalePriceInput] = useState('');
+  const [stockQuantityInput, setStockQuantityInput] = useState('');
+
+  // Formatar valor monetário para input
+  const formatCurrencyInput = (value) => {
+    if (!value || value === '') return '';
+    // Remove tudo que não é número ou vírgula/ponto
+    const cleanValue = value.replace(/[^\d,.-]/g, '');
+    // Se estiver vazio após limpeza, retorna vazio
+    if (!cleanValue) return '';
+    // Substitui vírgula por ponto para conversão
+    const numericValue = cleanValue.replace(',', '.');
+    // Verifica se é um número válido
+    if (isNaN(numericValue) || numericValue === '.') return '';
+    return numericValue;
+  };
+
+  // Formatar valor monetário para exibição
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
     }).format(value || 0);
+  };
+
+  // Lidar com mudanças nos campos de preço
+  const handleCostPriceChange = (e) => {
+    const value = e.target.value;
+    setCostPriceInput(value); // Salva o valor exato digitado
+    
+    // Se estiver vazio, define como 0
+    if (value === '') {
+      setFormData({ ...formData, costPrice: 0 });
+      return;
+    }
+    
+    // Remove tudo que não é número ou vírgula/ponto
+    const cleanValue = value.replace(/[^\d,.-]/g, '');
+    if (!cleanValue) {
+      setFormData({ ...formData, costPrice: 0 });
+      return;
+    }
+    
+    // Substitui vírgula por ponto para conversão
+    const numericValue = cleanValue.replace(',', '.');
+    
+    // Verifica se é um número válido
+    if (isNaN(numericValue) || numericValue === '.') {
+      setFormData({ ...formData, costPrice: 0 });
+    } else {
+      setFormData({ ...formData, costPrice: parseFloat(numericValue) });
+    }
+  };
+
+  const handleSalePriceChange = (e) => {
+    const value = e.target.value;
+    setSalePriceInput(value); // Salva o valor exato digitado
+    
+    // Se estiver vazio, define como 0
+    if (value === '') {
+      setFormData({ ...formData, salePrice: 0 });
+      return;
+    }
+    
+    // Remove tudo que não é número ou vírgula/ponto
+    const cleanValue = value.replace(/[^\d,.-]/g, '');
+    if (!cleanValue) {
+      setFormData({ ...formData, salePrice: 0 });
+      return;
+    }
+    
+    // Substitui vírgula por ponto para conversão
+    const numericValue = cleanValue.replace(',', '.');
+    
+    // Verifica se é um número válido
+    if (isNaN(numericValue) || numericValue === '.') {
+      setFormData({ ...formData, salePrice: 0 });
+    } else {
+      setFormData({ ...formData, salePrice: parseFloat(numericValue) });
+    }
+  };
+
+  // Lidar com mudanças no campo de quantidade do estoque
+  const handleStockQuantityChange = (e) => {
+    const value = e.target.value;
+    setStockQuantityInput(value); // Salva o valor exato digitado
+    
+    // Se estiver vazio, define como 0
+    if (value === '') {
+      setStockData({ ...stockData, quantity: 0 });
+      return;
+    }
+    
+    // Verifica se é um número válido (permite negativo)
+    const numericValue = Number(value);
+    
+    // Se for um número válido, usa ele
+    if (!isNaN(numericValue)) {
+      setStockData({ ...stockData, quantity: numericValue });
+    }
   };
 
   // Obter status do estoque
@@ -97,7 +241,20 @@ const Products = () => {
       salePrice: 0,
       minStock: 0
     });
+    setCostPriceInput('');
+    setSalePriceInput('');
+    setStockQuantityInput('');
     setEditingProduct(null);
+  };
+
+  // Carregar subgrupos por grupo
+  const loadSubgroupsByGroup = async (groupId) => {
+    try {
+      const response = await productSubgroupsAPI.getByGroup(groupId);
+      setSubgroups(response || []);
+    } catch (error) {
+      console.error('Erro ao carregar subgrupos:', error);
+    }
   };
 
   // Abrir formulário
@@ -116,6 +273,15 @@ const Products = () => {
         salePrice: product.salePrice || 0,
         minStock: product.minStock || 0
       });
+      
+      // Define os valores dos inputs de preço
+      setCostPriceInput(product.costPrice ? product.costPrice.toString().replace('.', ',') : '');
+      setSalePriceInput(product.salePrice ? product.salePrice.toString().replace('.', ',') : '');
+      
+      // Carregar subgrupos do grupo selecionado
+      if (product.group) {
+        loadSubgroupsByGroup(product.group);
+      }
     } else {
       resetForm();
     }
@@ -158,14 +324,25 @@ const Products = () => {
   // Ajustar estoque
   const handleStockAdjustment = async () => {
     try {
-      await productsAPI.adjustStock(selectedProduct._id, stockData);
+      // Envia os dados no formato esperado pelo backend
+      await productsAPI.adjustStock(selectedProduct._id, {
+        newQuantity: stockData.quantity,
+        reason: stockData.justification
+      });
       toast.success('Estoque ajustado com sucesso');
       setShowStockModal(false);
       setStockData({ quantity: 0, justification: '' });
+      setStockQuantityInput('');
       loadProducts();
     } catch (error) {
       console.error('Erro ao ajustar estoque:', error);
-      toast.error('Erro ao ajustar estoque');
+      
+      // Mostra mensagem de erro específica do backend
+      if (error.response?.data?.message) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error('Erro ao ajustar estoque');
+      }
     }
   };
 
@@ -187,30 +364,32 @@ const Products = () => {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="btn btn-secondary flex items-center gap-2"
+            className="btn btn-secondary flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-6 text-sm sm:text-base"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Atualizar
+            <span className="hidden sm:inline">Atualizar</span>
+            <span className="sm:hidden">Atual.</span>
           </button>
           <button
             onClick={() => openForm()}
-            className="btn btn-primary flex items-center gap-2"
+            className="btn btn-primary flex items-center gap-2 h-10 sm:h-11 px-3 sm:px-6 text-sm sm:text-base"
           >
             <Plus className="w-4 h-4" />
-            Novo Produto
+            <span className="hidden sm:inline">Novo Produto</span>
+            <span className="sm:hidden">Novo</span>
           </button>
         </div>
       </div>
 
       {/* Campo de Busca */}
       <div className="card mb-6">
-        <div className="card-content">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <div className="card-content py-4">
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 text-gray-400 w-4 h-4 pointer-events-none" style={{ top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
               placeholder="Buscar por código, descrição, marca ou grupo..."
-              className="input pl-10"
+              className="input pl-10 w-full h-10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -256,8 +435,8 @@ const Products = () => {
                           </div>
                         </td>
                         <td className="py-3 px-4 font-medium">{product.description}</td>
-                        <td className="py-3 px-4">{product.brand || 'N/A'}</td>
-                        <td className="py-3 px-4">{product.group || 'N/A'}</td>
+                        <td className="py-3 px-4">{getBrandName(product.brand)}</td>
+                        <td className="py-3 px-4">{getGroupName(product.group)}</td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end">
                             <span className="font-medium">{product.quantity}</span>
@@ -275,7 +454,7 @@ const Products = () => {
                           <div className="flex justify-center gap-2">
                             <button
                               onClick={() => openForm(product)}
-                              className="btn btn-primary btn-sm"
+                              className="btn btn-primary h-8 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm"
                               title="Editar"
                             >
                               <Edit2 className="w-4 h-4" />
@@ -283,9 +462,11 @@ const Products = () => {
                             <button
                               onClick={() => {
                                 setSelectedProduct(product);
+                                setStockData({ quantity: 0, justification: '' });
+                                setStockQuantityInput('');
                                 setShowStockModal(true);
                               }}
-                              className="btn btn-secondary btn-sm"
+                              className="btn btn-secondary h-8 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm"
                               title="Ajustar Estoque"
                             >
                               <PlusCircle className="w-4 h-4" />
@@ -295,7 +476,7 @@ const Products = () => {
                                 setSelectedProduct(product);
                                 setShowTrash(true);
                               }}
-                              className="btn btn-danger btn-sm"
+                              className="btn btn-danger h-8 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm"
                               title="Excluir"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -346,6 +527,80 @@ const Products = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Marca
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.brand}
+                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  >
+                    <option value="">Selecione uma marca</option>
+                    {brands.map((brand) => (
+                      <option key={brand._id} value={brand._id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Descrição *
+                  </label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Grupo
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.group}
+                    onChange={(e) => {
+                      const newGroup = e.target.value;
+                      setFormData({ ...formData, group: newGroup, subgroup: '' });
+                      loadSubgroupsByGroup(newGroup);
+                    }}
+                  >
+                    <option value="">Selecione um grupo</option>
+                    {groups.map((group) => (
+                      <option key={group._id} value={group._id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subgrupo
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.subgroup}
+                    onChange={(e) => setFormData({ ...formData, subgroup: e.target.value })}
+                    disabled={!formData.group}
+                  >
+                    <option value="">Selecione um subgrupo</option>
+                    {subgroups.map((subgroup) => (
+                      <option key={subgroup._id} value={subgroup._id}>
+                        {subgroup.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Unidade
                   </label>
                   <select
@@ -357,46 +612,7 @@ const Products = () => {
                     <option value="KG">QUILOGRAMA</option>
                     <option value="LT">LITRO</option>
                     <option value="CX">CAIXA</option>
-                    <option value="FD">FARDO</option>
                   </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descrição *
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Marca
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={formData.brand}
-                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Grupo
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={formData.group}
-                    onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                  />
                 </div>
               </div>
 
@@ -406,11 +622,15 @@ const Products = () => {
                     Estoque Atual
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     className="input"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
+                    value={formData.quantity || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, quantity: value === '' ? 0 : Number(value) });
+                    }}
                     min="0"
+                    placeholder="0"
                   />
                 </div>
                 <div>
@@ -418,23 +638,19 @@ const Products = () => {
                     Estoque Mínimo
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     className="input"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: Number(e.target.value) })}
+                    value={formData.minStock || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, minStock: value === '' ? 0 : Number(value) });
+                    }}
                     min="0"
+                    placeholder="0"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Subgrupo
-                  </label>
-                  <input
-                    type="text"
-                    className="input"
-                    value={formData.subgroup}
-                    onChange={(e) => setFormData({ ...formData, subgroup: e.target.value })}
-                  />
+                  {/* Campo vazio para alinhamento */}
                 </div>
               </div>
 
@@ -444,12 +660,13 @@ const Products = () => {
                     Preço de Custo
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     className="input"
-                    value={formData.costPrice}
-                    onChange={(e) => setFormData({ ...formData, costPrice: Number(e.target.value) })}
+                    value={costPriceInput}
+                    onChange={handleCostPriceChange}
                     min="0"
                     step="0.01"
+                    placeholder="0,00"
                   />
                 </div>
                 <div>
@@ -457,12 +674,13 @@ const Products = () => {
                     Preço de Venda
                   </label>
                   <input
-                    type="number"
+                    type="text"
                     className="input"
-                    value={formData.salePrice}
-                    onChange={(e) => setFormData({ ...formData, salePrice: Number(e.target.value) })}
+                    value={salePriceInput}
+                    onChange={handleSalePriceChange}
                     min="0"
                     step="0.01"
+                    placeholder="0,00"
                   />
                 </div>
               </div>
@@ -474,13 +692,13 @@ const Products = () => {
                   setShowForm(false);
                   resetForm();
                 }}
-                className="btn btn-secondary"
+                className="btn btn-secondary h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSave}
-                className="btn btn-primary"
+                className="btn btn-primary h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
                 disabled={!formData.description}
               >
                 {editingProduct ? 'Atualizar' : 'Cadastrar'}
@@ -500,6 +718,7 @@ const Products = () => {
                 onClick={() => {
                   setShowStockModal(false);
                   setStockData({ quantity: 0, justification: '' });
+                  setStockQuantityInput('');
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -522,11 +741,11 @@ const Products = () => {
                   Quantidade
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   className="input"
-                  value={stockData.quantity}
-                  onChange={(e) => setStockData({ ...stockData, quantity: Number(e.target.value) })}
-                  min="0"
+                  value={stockQuantityInput}
+                  onChange={handleStockQuantityChange}
+                  placeholder="0 (positivo para adicionar, negativo para remover)"
                 />
               </div>
 
@@ -550,13 +769,13 @@ const Products = () => {
                   setShowStockModal(false);
                   setStockData({ quantity: 0, justification: '' });
                 }}
-                className="btn btn-secondary"
+                className="btn btn-secondary h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleStockAdjustment}
-                className="btn btn-primary"
+                className="btn btn-primary h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
                 disabled={!stockData.quantity || !stockData.justification}
               >
                 Ajustar
@@ -583,13 +802,13 @@ const Products = () => {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowTrash(false)}
-                className="btn btn-secondary"
+                className="btn btn-secondary h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
               >
                 Cancelar
               </button>
               <button
                 onClick={() => handleDelete(selectedProduct._id)}
-                className="btn btn-danger"
+                className="btn btn-danger h-10 sm:h-11 px-4 sm:px-6 text-sm sm:text-base"
               >
                 Excluir
               </button>

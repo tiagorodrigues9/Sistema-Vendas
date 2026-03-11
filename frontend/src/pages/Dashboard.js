@@ -39,12 +39,13 @@ const Dashboard = () => {
         dashboardAPI.getInventoryMovements({ period: selectedPeriod })
       ]);
 
-      setOverview(overviewResponse.data);
-      setMonthlySales(monthlySalesResponse.data.data || []);
-      setTopCustomers(topCustomersResponse.data.data || []);
-      setTopProducts(topProductsResponse.data.data || []);
-      setLowStockProducts(lowStockResponse.data || []);
-      setInventoryMovements(movementsResponse.data.data || []);
+      // Acessar dados de forma segura com optional chaining
+      setOverview(overviewResponse?.data || {});
+      setMonthlySales(monthlySalesResponse?.data?.data || []);
+      setTopCustomers(topCustomersResponse?.data?.data || []);
+      setTopProducts(topProductsResponse?.data?.data || []);
+      setLowStockProducts(lowStockResponse?.data?.products || lowStockResponse?.data || []);
+      setInventoryMovements(movementsResponse?.data?.data || []);
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
       toast.error('Erro ao carregar dados do dashboard');

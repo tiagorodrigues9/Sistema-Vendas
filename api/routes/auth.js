@@ -1,9 +1,10 @@
 const express = require('express');
 const User = require('../models/User');
 const Company = require('../models/Company');
-const { generateToken } = require('../utils/jwt');
+const { generateToken, generateResetToken } = require('../utils/jwt');
 const { validateRegister, validateLogin } = require('../middleware/validation');
 const { auth } = require('../middleware/auth');
+const crypto = require('crypto');
 const router = express.Router();
 
 router.post('/register', validateRegister, async (req, res) => {
@@ -119,7 +120,8 @@ router.post('/login', validateLogin, async (req, res) => {
         isApproved: user.isApproved
       },
       company: {
-        id: company._id,
+        _id: company._id,
+        id: company._id, // Manter para compatibilidade
         cnpj: company.cnpj,
         companyName: company.companyName,
         isApproved: company.isApproved,
@@ -197,7 +199,8 @@ router.get('/me', auth, async (req, res) => {
         lastLogin: req.user.lastLogin
       },
       company: {
-        id: req.company._id,
+        _id: req.company._id,
+        id: req.company._id, // Manter para compatibilidade
         cnpj: req.company.cnpj,
         companyName: req.company.companyName,
         isApproved: req.company.isApproved,
@@ -215,6 +218,91 @@ router.post('/logout', auth, async (req, res) => {
     res.json({ message: 'Logout realizado com sucesso' });
   } catch (error) {
     console.error('Erro no logout:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Esqueci a senha
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email }).populate('company');
+    if (!user) {
+      return res.status(404).json({ message: 'E-mail não encontrado' });
+    }
+
+    // Gerar token de reset
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hora
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpiry = resetTokenExpiry;
+    await user.save();
+
+    // Em um ambiente real, aqui você enviaria um e-mail
+    // Por ora, vamos retornar o token para desenvolvimento
+    console.log('Token de reset de senha:', resetToken);
+    console.log('Link de reset:', `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`);
+
+    res.json({
+      message: 'E-mail de recuperação enviado com sucesso',
+      // Em desenvolvimento, retorne o token. Em produção, remova isso.
+      resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
+    });
+
+  } catch (error) {
+    console.error('Erro ao solicitar recuperação de senha:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Resetar senha
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Token inválido ou expirado' });
+    }
+
+    // Atualizar senha
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpiry = undefined;
+    await user.save();
+
+    res.json({ message: 'Senha redefinida com sucesso' });
+
+  } catch (error) {
+    console.error('Erro ao redefinir senha:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Verificar token de reset
+router.get('/verify-reset-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Token inválido ou expirado' });
+    }
+
+    res.json({ message: 'Token válido' });
+
+  } catch (error) {
+    console.error('Erro ao verificar token:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });

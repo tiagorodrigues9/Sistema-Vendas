@@ -36,9 +36,9 @@ const saleSchema = new mongoose.Schema({
     unique: true
   },
   customer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Customer',
-    required: true
+    // Pode ser ObjectId (cliente cadastrado) ou a string especial como 'CONSUMIDOR'
+    type: mongoose.Schema.Types.Mixed,
+    required: false
   },
   customerName: { type: String, required: true },
   items: [saleItemSchema],
@@ -64,7 +64,8 @@ const saleSchema = new mongoose.Schema({
   },
   cashRegister: {
     isOpen: { type: Boolean, required: true },
-    openingTime: { type: Date, required: true }
+    openingTime: { type: Date, required: true },
+    registerId: { type: mongoose.Schema.Types.ObjectId, ref: 'CashRegister' }
   },
   notes: { type: String, trim: true },
   printed: { type: Boolean, default: false },
@@ -86,13 +87,22 @@ const saleSchema = new mongoose.Schema({
   timestamps: true
 });
 
-saleSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    const lastSale = await this.constructor.findOne({ company: this.company })
-      .sort({ createdAt: -1 });
-    
-    const lastNumber = lastSale ? parseInt(lastSale.saleNumber.split('-')[1]) : 0;
-    this.saleNumber = `VND-${String(lastNumber + 1).padStart(6, '0')}`;
+saleSchema.pre('validate', async function(next) {
+  if (this.isNew && !this.saleNumber) {
+    try {
+      const lastSale = await this.constructor.findOne({ company: this.company })
+        .sort({ createdAt: -1 });
+      let lastNumber = 0;
+      if (lastSale && lastSale.saleNumber) {
+        const parts = String(lastSale.saleNumber).split('-');
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num)) lastNumber = num;
+      }
+      this.saleNumber = `VND-${String(lastNumber + 1).padStart(6, '0')}`;
+    } catch (err) {
+      // se ocorrer erro ao gerar número, deixe o fluxo continuar e a validação falhará caso necessário
+      console.error('Erro ao gerar saleNumber:', err);
+    }
   }
   next();
 });

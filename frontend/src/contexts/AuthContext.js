@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../services/api';
+import { LOCAL_STORAGE_KEYS } from '../utils/constants';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
@@ -12,7 +13,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('@PDV:token');
+      const token = localStorage.getItem(LOCAL_STORAGE_KEYS.TOKEN);
       
       if (token) {
         try {
@@ -22,7 +23,9 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
         } catch (error) {
           console.error('Auth check failed:', error);
-          localStorage.removeItem('@PDV:token');
+          localStorage.removeItem(LOCAL_STORAGE_KEYS.TOKEN);
+          localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
+          localStorage.removeItem(LOCAL_STORAGE_KEYS.COMPANY);
         }
       }
       
@@ -32,15 +35,22 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, rememberMe = false) => {
     try {
       const response = await authAPI.login({ email, password });
       
       const { token, user: userData, company: companyData } = response.data;
       
-      localStorage.setItem('@PDV:token', token);
-      localStorage.setItem('@PDV:user', JSON.stringify(userData));
-      localStorage.setItem('@PDV:company', JSON.stringify(companyData));
+      localStorage.setItem(LOCAL_STORAGE_KEYS.TOKEN, token);
+      localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(userData));
+      localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY, JSON.stringify(companyData));
+      
+      // Se "lembrar-me" estiver marcado, salva preferência
+      if (rememberMe) {
+        localStorage.setItem(LOCAL_STORAGE_KEYS.REMEMBER_ME, 'true');
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.REMEMBER_ME);
+      }
       
       setUser(userData);
       setCompany(companyData);
@@ -74,9 +84,10 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout API error:', error);
     } finally {
-      localStorage.removeItem('@PDV:token');
-      localStorage.removeItem('@PDV:user');
-      localStorage.removeItem('@PDV:company');
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.TOKEN);
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.COMPANY);
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.REMEMBER_ME);
       
       setUser(null);
       setCompany(null);
@@ -88,12 +99,12 @@ export const AuthProvider = ({ children }) => {
 
   const updateUser = useCallback((userData) => {
     setUser(prev => ({ ...prev, ...userData }));
-    localStorage.setItem('@PDV:user', JSON.stringify({ ...user, ...userData }));
+    localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify({ ...user, ...userData }));
   }, [user]);
 
   const updateCompany = useCallback((companyData) => {
     setCompany(prev => ({ ...prev, ...companyData }));
-    localStorage.setItem('@PDV:company', JSON.stringify({ ...company, ...companyData }));
+    localStorage.setItem(LOCAL_STORAGE_KEYS.COMPANY, JSON.stringify({ ...company, ...companyData }));
   }, [company]);
 
   const hasPermission = useCallback((requiredRole) => {
@@ -123,6 +134,10 @@ export const AuthProvider = ({ children }) => {
     return permissions[user.role]?.includes(route) || false;
   }, [user]);
 
+  const getRememberMe = useCallback(() => {
+    return localStorage.getItem(LOCAL_STORAGE_KEYS.REMEMBER_ME) === 'true';
+  }, []);
+
   const value = {
     user,
     company,
@@ -134,7 +149,8 @@ export const AuthProvider = ({ children }) => {
     updateUser,
     updateCompany,
     hasPermission,
-    canAccess
+    canAccess,
+    getRememberMe
   };
 
   return (

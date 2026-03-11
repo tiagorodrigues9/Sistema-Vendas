@@ -1,21 +1,23 @@
 const mongoose = require('mongoose');
 
 const customerSchema = new mongoose.Schema({
-  name: {
+  fullName: {
     type: String,
     required: [true, 'Nome é obrigatório'],
     trim: true
   },
+  // Campo legado para compatibilidade
+  name: {
+    type: String,
+    trim: true
+  },
   document: {
     type: String,
-    required: [true, 'CPF/CNPJ é obrigatório'],
-    unique: true,
     trim: true
   },
   documentType: {
     type: String,
-    enum: ['cpf', 'cnpj'],
-    required: true
+    enum: ['cpf', 'cnpj']
   },
   email: {
     type: String,
@@ -28,12 +30,24 @@ const customerSchema = new mongoose.Schema({
     trim: true
   },
   address: {
-    street: { type: String, required: true, trim: true },
-    neighborhood: { type: String, required: true, trim: true },
-    city: { type: String, required: true, trim: true },
-    state: { type: String, trim: true },
-    zipCode: { type: String, trim: true },
-    number: { type: String, trim: true }
+    type: String,
+    trim: true
+  },
+  neighborhood: {
+    type: String,
+    trim: true
+  },
+  city: {
+    type: String,
+    trim: true
+  },
+  state: {
+    type: String,
+    trim: true
+  },
+  zipCode: {
+    type: String,
+    trim: true
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -48,6 +62,9 @@ const customerSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  deletedAt: {
+    type: Date
+  },
   purchaseHistory: [{
     sale: {
       type: mongoose.Schema.Types.ObjectId,
@@ -59,23 +76,23 @@ const customerSchema = new mongoose.Schema({
   totalPurchases: {
     type: Number,
     default: 0
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true
 });
 
+// Middleware para compatibilidade e automação
 customerSchema.pre('save', function(next) {
+  // Mapear fullName para name para compatibilidade
+  if (this.fullName && !this.name) {
+    this.name = this.fullName;
+  }
+  
+  // Definir documentType automaticamente
   if (this.document) {
     this.documentType = this.document.length === 14 ? 'cnpj' : 'cpf';
   }
+  
   next();
 });
 
@@ -84,5 +101,10 @@ customerSchema.methods.addPurchase = function(saleId, total) {
   this.totalPurchases += total;
   return this.save();
 };
+
+// Virtual para compatibilidade
+customerSchema.virtual('displayName').get(function() {
+  return this.fullName || this.name;
+});
 
 module.exports = mongoose.model('Customer', customerSchema);

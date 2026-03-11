@@ -20,6 +20,7 @@ router.get('/', auth, async (req, res) => {
     
     if (search) {
       query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
         { name: { $regex: search, $options: 'i' } },
         { document: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } }
@@ -33,7 +34,7 @@ router.get('/', auth, async (req, res) => {
     const customers = await Customer.find(query)
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .sort({ name: 1 });
+      .sort({ fullName: 1 });
 
     const total = await Customer.countDocuments(query);
 
@@ -98,19 +99,26 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, validateCustomer, async (req, res) => {
   try {
+    console.log('Dados recebidos:', req.body);
+    
     const customerData = {
       ...req.body,
       company: req.company._id
     };
 
-    const existingCustomer = await Customer.findOne({ 
-      document: req.body.document,
-      company: req.company._id,
-      isDeleted: false 
-    });
-    
-    if (existingCustomer) {
-      return res.status(400).json({ message: 'CPF/CNPJ já cadastrado' });
+    console.log('Customer data:', customerData);
+
+    // Verificar documento duplicado apenas se fornecido
+    if (req.body.document) {
+      const existingCustomer = await Customer.findOne({ 
+        document: req.body.document,
+        company: req.company._id,
+        isDeleted: false 
+      });
+      
+      if (existingCustomer) {
+        return res.status(400).json({ message: 'CPF/CNPJ já cadastrado' });
+      }
     }
 
     const customer = new Customer(customerData);
@@ -119,6 +127,7 @@ router.post('/', auth, validateCustomer, async (req, res) => {
     res.status(201).json(customer);
   } catch (error) {
     console.error('Erro ao criar cliente:', error);
+    console.error('Detalhes do erro:', error.message);
     if (error.code === 11000) {
       return res.status(400).json({ message: 'CPF/CNPJ já cadastrado' });
     }

@@ -10,6 +10,8 @@ import Layout from './components/Layout';
 // Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Sales from './pages/Sales';
 import Customers from './pages/Customers';
@@ -18,6 +20,10 @@ import Entries from './pages/Entries';
 import Receivables from './pages/Receivables';
 import Admin from './pages/Admin';
 import Profile from './pages/Profile';
+import Brands from './pages/Brands';
+import ProductGroups from './pages/ProductGroups';
+import ProductSubgroups from './pages/ProductSubgroups';
+import Suppliers from './pages/Suppliers';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient({
@@ -40,6 +46,8 @@ function App() {
               {/* Public routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               
               {/* Protected routes */}
               <Route path="/*" element={
@@ -55,6 +63,10 @@ function App() {
                       <Route path="contas-receber" element={<Receivables />} />
                       <Route path="admin" element={<Admin />} />
                       <Route path="perfil" element={<Profile />} />
+                      <Route path="cadastros/marcas" element={<Brands />} />
+                      <Route path="cadastros/grupos" element={<ProductGroups />} />
+                      <Route path="cadastros/subgrupos" element={<ProductSubgroups />} />
+                      <Route path="cadastros/fornecedores" element={<Suppliers />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </Layout>

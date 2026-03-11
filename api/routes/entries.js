@@ -82,23 +82,32 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, authorizeOwnerOrAdmin, validateEntry, async (req, res) => {
   try {
-    const { fiscalDocument, supplier, invoiceValue, items, notes } = req.body;
+    console.log('Dados recebidos no backend:', req.body);
+    console.log('Usuário:', req.user);
+    console.log('Empresa:', req.company);
+    
+    const { fiscalDocument, supplier, invoiceValue, items, notes, entryNumber } = req.body;
 
+    console.log('Validando itens...');
     for (const item of items) {
+      console.log('Processando item:', item);
       const product = await Product.findOne({ 
         _id: item.product,
         company: req.company._id 
       });
       
       if (!product) {
+        console.log('Produto não encontrado:', item.product);
         return res.status(404).json({ message: `Produto não encontrado: ${item.product}` });
       }
       
       item.productDescription = product.description;
       item.total = item.unitCost * item.quantity;
+      console.log('Item processado:', item);
     }
 
     const entryData = {
+      entryNumber, // Adicionando entryNumber
       fiscalDocument,
       supplier,
       invoiceValue,
@@ -108,10 +117,24 @@ router.post('/', auth, authorizeOwnerOrAdmin, validateEntry, async (req, res) =>
       notes
     };
 
-    entryData.calculateTotal();
+    console.log('Dados da entrada:', entryData);
 
     const entry = new Entry(entryData);
+    console.log('Instância criada:', entry);
+    console.log('Itens da entrada:', entry.items);
+    console.log('Valores dos itens:', entry.items.map(item => ({
+      description: item.productDescription,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      total: item.total,
+      totalValue: item.totalValue
+    })));
+    
+    entry.calculateTotal(); // Chamar o método na instância
+    console.log('Total calculado:', entry.totalItems);
+    
     await entry.save();
+    console.log('Entrada salva com sucesso');
 
     const populatedEntry = await Entry.findById(entry._id)
       .populate('user', 'name')
@@ -120,26 +143,33 @@ router.post('/', auth, authorizeOwnerOrAdmin, validateEntry, async (req, res) =>
     res.status(201).json(populatedEntry);
   } catch (error) {
     console.error('Erro ao criar entrada:', error);
-    res.status(500).json({ message: 'Erro interno do servidor' });
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
   }
 });
 
 router.put('/:id/complete', auth, authorizeOwnerOrAdmin, async (req, res) => {
   try {
+    console.log('Recebida requisição para concluir entrada:', req.params.id);
+    
     const entry = await Entry.findOne({ 
       _id: req.params.id,
       company: req.company._id 
     });
 
     if (!entry) {
+      console.log('Entrada não encontrada');
       return res.status(404).json({ message: 'Entrada não encontrada' });
     }
 
     if (entry.status !== 'pending') {
+      console.log('Entrada já foi processada, status atual:', entry.status);
       return res.status(400).json({ message: 'Entrada já foi processada' });
     }
 
+    console.log('Status antes:', entry.status);
     await entry.complete();
+    console.log('Status depois:', entry.status);
 
     res.json({ message: 'Entrada concluída com sucesso', entry });
   } catch (error) {
@@ -287,6 +317,29 @@ router.get('/report/period', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao gerar relatório de entradas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+router.delete('/:id', auth, authorizeOwnerOrAdmin, async (req, res) => {
+  try {
+    const entry = await Entry.findOne({ 
+      _id: req.params.id,
+      company: req.company._id 
+    });
+
+    if (!entry) {
+      return res.status(404).json({ message: 'Entrada não encontrada' });
+    }
+
+    if (entry.status !== 'pending') {
+      return res.status(400).json({ message: 'Apenas entradas pendentes podem ser excluídas' });
+    }
+
+    await Entry.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Entrada excluída com sucesso' });
+  } catch (error) {
+    console.error('Erro ao excluir entrada:', error);
     res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });

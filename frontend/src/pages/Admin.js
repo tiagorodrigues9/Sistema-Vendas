@@ -86,38 +86,38 @@ const Admin = () => {
 
   const handleRejectUser = (userId) => {
     setPendingUsers(pendingUsers.filter(user => user._id !== userId));
-    toast.info('Usuário rejeitado');
+    toast('Usuário rejeitado');
   };
 
   const handleRejectCompany = (companyId) => {
     setPendingCompanies(pendingCompanies.filter(company => company._id !== companyId));
-    toast.info('Empresa rejeitada');
+    toast('Empresa rejeitada');
   };
 
   // Funções para gestão de usuários (placeholder)
   const handleChangeUserRole = (userId, newRole) => {
-    toast.info('Alteração de papel em desenvolvimento');
+    toast('Alteração de papel em desenvolvimento');
   };
 
   const handleToggleUserStatus = (userId) => {
-    toast.info('Alteração de status em desenvolvimento');
+    toast('Alteração de status em desenvolvimento');
   };
 
   const handleResetPassword = (userEmail) => {
-    toast.info('Reset de senha em desenvolvimento');
+    toast('Reset de senha em desenvolvimento');
   };
 
   const handleDeleteUser = (userId) => {
-    toast.info('Exclusão de usuário em desenvolvimento');
+    toast('Exclusão de usuário em desenvolvimento');
   };
 
   // Funções para gestão de empresas (placeholder)
   const handleToggleCompanyStatus = (companyId) => {
-    toast.info('Alteração de status em desenvolvimento');
+    toast('Alteração de status em desenvolvimento');
   };
 
   const handleDeleteCompany = (companyId) => {
-    toast.info('Exclusão de empresa em desenvolvimento');
+    toast('Exclusão de empresa em desenvolvimento');
   };
 
   // Funções de filtro
@@ -159,14 +159,14 @@ const Admin = () => {
         <h1 className="text-2xl font-bold">Painel Administrativo</h1>
         <div className="flex gap-3">
           <button
-            onClick={() => toast.info('Relatório de usuários em desenvolvimento')}
+            onClick={() => toast('Relatório de usuários em desenvolvimento')}
             className="btn btn-secondary"
           >
             <Download className="w-4 h-4 mr-2" />
             Relatório de Usuários
           </button>
           <button
-            onClick={() => toast.info('Relatório de empresas em desenvolvimento')}
+            onClick={() => toast('Relatório de empresas em desenvolvimento')}
             className="btn btn-secondary"
           >
             <Download className="w-4 h-4 mr-2" />

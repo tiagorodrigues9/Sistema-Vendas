@@ -1,8 +1,10 @@
 const { body, validationResult } = require('express-validator');
 
 const handleValidationErrors = (req, res, next) => {
+  console.log('Corpo da requisição na validação:', req.body);
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    console.log('Erros de validação encontrados:', errors.array());
     return res.status(400).json({
       message: 'Erros de validação',
       errors: errors.array()
@@ -58,36 +60,43 @@ const validateLogin = [
 ];
 
 const validateCustomer = [
-  body('name')
+  body('fullName')
     .notEmpty()
     .withMessage('Nome é obrigatório')
     .isLength({ min: 3, max: 100 })
     .withMessage('Nome deve ter entre 3 e 100 caracteres'),
   
   body('document')
-    .notEmpty()
-    .withMessage('CPF/CNPJ é obrigatório')
+    .optional()
     .custom((value) => {
-      if (value.length !== 11 && value.length !== 14) {
-        throw new Error('CPF deve ter 11 dígitos ou CNPJ deve ter 14 dígitos');
-      }
-      if (!/^\d+$/.test(value)) {
-        throw new Error('CPF/CNPJ deve conter apenas números');
+      if (value) {
+        // Remover caracteres não numéricos
+        const cleanValue = value.replace(/\D/g, '');
+        if (cleanValue.length !== 11 && cleanValue.length !== 14) {
+          throw new Error('CPF deve ter 11 dígitos ou CNPJ deve ter 14 dígitos');
+        }
       }
       return true;
     }),
   
-  body('address.street')
-    .notEmpty()
-    .withMessage('Rua é obrigatória'),
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('E-mail inválido')
+    .normalizeEmail(),
   
-  body('address.neighborhood')
-    .notEmpty()
-    .withMessage('Bairro é obrigatório'),
-  
-  body('address.city')
-    .notEmpty()
-    .withMessage('Cidade é obrigatória'),
+  body('phone')
+    .optional()
+    .custom((value) => {
+      if (value) {
+        // Remover caracteres não numéricos
+        const cleanValue = value.replace(/\D/g, '');
+        if (cleanValue.length < 10 || cleanValue.length > 15) {
+          throw new Error('Telefone deve ter entre 10 e 15 dígitos');
+        }
+      }
+      return true;
+    }),
   
   handleValidationErrors
 ];
@@ -134,8 +143,12 @@ const validateProduct = [
 
 const validateSale = [
   body('customer')
-    .notEmpty()
-    .withMessage('Cliente é obrigatório'),
+    .custom((value) => {
+      // Permite o cliente especial 'CONSUMIDOR' ou um id não vazio
+      if (value === 'CONSUMIDOR') return true;
+      if (!value) throw new Error('Cliente é obrigatório');
+      return true;
+    }),
   
   body('items')
     .isArray({ min: 1 })
@@ -212,6 +225,67 @@ const validateEntry = [
   handleValidationErrors
 ];
 
+const validateSupplier = [
+  body('name')
+    .notEmpty()
+    .withMessage('Nome do fornecedor é obrigatório')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Nome deve ter entre 2 e 100 caracteres'),
+  
+  body('cnpj')
+    .optional()
+    .custom((value) => {
+      if (value) {
+        const cleanCnpj = value.replace(/[^\d]/g, '');
+        if (cleanCnpj.length !== 14) {
+          throw new Error('CNPJ deve ter 14 dígitos');
+        }
+      }
+      return true;
+    }),
+  
+  body('phone')
+    .optional()
+    .custom((value) => {
+      if (value) {
+        const cleanPhone = value.replace(/[^\d]/g, '');
+        if (cleanPhone.length < 10) {
+          throw new Error('Telefone deve ter pelo menos 10 dígitos');
+        }
+      }
+      return true;
+    }),
+  
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Email inválido'),
+  
+  body('address.zipCode')
+    .optional()
+    .custom((value) => {
+      if (value) {
+        const cleanZip = value.replace(/[^\d]/g, '');
+        if (cleanZip.length !== 8) {
+          throw new Error('CEP deve ter 8 dígitos');
+        }
+      }
+      return true;
+    }),
+  
+  body('address.state')
+    .optional()
+    .isLength({ min: 2, max: 2 })
+    .withMessage('Estado deve ter 2 caracteres'),
+  
+  body('contact.email')
+    .optional()
+    .isEmail()
+    .withMessage('Email do contato inválido'),
+  
+  handleValidationErrors
+];
+
 module.exports = {
   validateRegister,
   validateLogin,
@@ -219,5 +293,6 @@ module.exports = {
   validateProduct,
   validateSale,
   validateEntry,
+  validateSupplier,
   handleValidationErrors
 };

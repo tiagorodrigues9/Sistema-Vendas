@@ -83,7 +83,7 @@ entrySchema.pre('save', async function(next) {
 });
 
 entrySchema.methods.calculateTotal = function() {
-  this.totalItems = this.items.reduce((sum, item) => sum + item.total, 0);
+  this.totalItems = this.items.reduce((sum, item) => sum + (item.totalValue || item.total || 0), 0);
   return this.totalItems;
 };
 

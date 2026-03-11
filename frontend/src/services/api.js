@@ -5,7 +5,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 20000, // Aumentado para 20 segundos para lidar com backend lento
   headers: {
     'Content-Type': 'application/json',
   },
@@ -47,6 +47,9 @@ export const authAPI = {
   registerUser: (userData) => api.post('/auth/register-user', userData),
   me: () => api.get('/auth/me'),
   logout: () => api.post('/auth/logout'),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (data) => api.post('/auth/reset-password', data),
+  verifyResetToken: (token) => api.get(`/auth/verify-reset-token/${token}`),
 };
 
 // Users API
@@ -63,33 +66,135 @@ export const usersAPI = {
 
 // Companies API
 export const companiesAPI = {
-  getByCNPJ: (cnpj) => api.get(`/companies/cnpj/${cnpj}`),
-  getAll: (params) => api.get('/companies', { params }),
-  getPending: () => api.get('/companies/pending'),
   getById: (id) => api.get(`/companies/${id}`),
   update: (id, data) => api.put(`/companies/${id}`, data),
-  approve: (id) => api.put(`/companies/${id}/approve`),
-  deactivate: (id) => api.put(`/companies/${id}/deactivate`),
-  delete: (id) => api.delete(`/companies/${id}`),
-  openCashRegister: (data) => api.put('/companies/cash-register/open', data),
-  closeCashRegister: () => api.put('/companies/cash-register/close'),
-  adjustCashRegister: (data) => api.put('/companies/cash-register/adjust', data),
+  updateSettings: (id, settings) => api.put(`/companies/${id}/settings`, settings),
+  cashRegister: {
+    open: (id, data) => api.post(`/companies/${id}/cash-register/open`, data),
+    close: (id, data) => api.post(`/companies/${id}/cash-register/close`, data),
+    adjust: (id, data) => api.post(`/companies/${id}/cash-register/adjust`, data),
+    getCurrentAdjustments: (id) => api.get(`/companies/${id}/cash-register/current-adjustments`),
+  },
+  getPrinters: () => api.get('/companies/printers'),
 };
 
 // Products API
 export const productsAPI = {
-  getAll: (params) => api.get('/products', { params }),
-  getByBarcode: (barcode) => api.get(`/products/barcode/${barcode}`),
-  getGroups: () => api.get('/products/groups'),
-  getTrash: (params) => api.get('/products/trash', { params }),
-  getById: (id) => api.get(`/products/${id}`),
-  create: (data) => api.post('/products', data),
-  update: (id, data) => api.put(`/products/${id}`, data),
-  addStock: (id, data) => api.put(`/products/${id}/stock`, data),
-  adjustStock: (id, data) => api.put(`/products/${id}/adjust-stock`, data),
-  restore: (id) => api.put(`/products/${id}/restore`),
-  delete: (id) => api.delete(`/products/${id}`),
-  deletePermanent: (id) => api.delete(`/products/${id}/permanent`),
+  getAll: async (params = {}) => {
+    const response = await api.get('/products', { params });
+    return response;
+  },
+
+  getById: async (id) => {
+    const response = await api.get(`/products/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await api.post('/products', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await api.put(`/products/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/products/${id}`);
+    return response.data;
+  },
+
+  adjustStock: async (id, data) => {
+    const response = await api.put(`/products/${id}/adjust-stock`, data);
+    return response.data;
+  }
+};
+
+export const brandsAPI = {
+  getAll: async (params = {}) => {
+    const response = await api.get('/brands', { params });
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await api.get(`/brands/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await api.post('/brands', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await api.put(`/brands/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/brands/${id}`);
+    return response.data;
+  }
+};
+
+export const productGroupsAPI = {
+  getAll: async (params = {}) => {
+    const response = await api.get('/product-groups', { params });
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await api.get(`/product-groups/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await api.post('/product-groups', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await api.put(`/product-groups/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/product-groups/${id}`);
+    return response.data;
+  }
+};
+
+export const productSubgroupsAPI = {
+  getAll: async (params = {}) => {
+    const response = await api.get('/product-subgroups', { params });
+    return response.data;
+  },
+
+  getByGroup: async (groupId) => {
+    const response = await api.get(`/product-subgroups/by-group/${groupId}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await api.get(`/product-subgroups/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await api.post('/product-subgroups', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await api.put(`/product-subgroups/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/product-subgroups/${id}`);
+    return response.data;
+  }
 };
 
 // Customers API
@@ -113,6 +218,7 @@ export const salesAPI = {
   cancel: (id, data) => api.put(`/sales/${id}/cancel`, data),
   getDailyReport: (params) => api.get('/sales/report/daily', { params }),
   getPeriodReport: (params) => api.get('/sales/report/period', { params }),
+  getCurrentCashRegisterReport: (params) => api.get('/sales/report/current-cash-register', { params })
 };
 
 // Entries API
@@ -121,6 +227,7 @@ export const entriesAPI = {
   getById: (id) => api.get(`/entries/${id}`),
   create: (data) => api.post('/entries', data),
   update: (id, data) => api.put(`/entries/${id}`, data),
+  delete: (id) => api.delete(`/entries/${id}`),
   complete: (id) => api.put(`/entries/${id}/complete`),
   cancel: (id, data) => api.put(`/entries/${id}/cancel`, data),
   getPeriodReport: (params) => api.get('/entries/report/period', { params }),

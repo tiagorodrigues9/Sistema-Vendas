@@ -239,7 +239,18 @@ router.put('/:id/adjust-stock', auth, authorizeOwnerOrAdmin, async (req, res) =>
       return res.status(404).json({ message: 'Produto não encontrado' });
     }
 
-    await product.adjustStock(newQuantity, reason, req.user._id);
+    // Se for um ajuste relativo (negativo ou positivo), adiciona/subtrai do estoque atual
+    const finalQuantity = product.quantity + newQuantity;
+    
+    // Verifica se o estoque final não é negativo
+    if (finalQuantity < 0) {
+      return res.status(400).json({ 
+        message: `Estoque insuficiente. Produto atual: ${product.quantity} unidades, tentativa de remover ${Math.abs(newQuantity)} unidades. Estoque final seria ${finalQuantity} unidades.` 
+      });
+    }
+
+    // Usa o método adjustStock com a quantidade final
+    await product.adjustStock(finalQuantity, reason, req.user._id);
 
     res.json({ message: 'Estoque ajustado com sucesso', product });
   } catch (error) {

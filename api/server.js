@@ -17,11 +17,26 @@ const entryRoutes = require('./routes/entries');
 const dashboardRoutes = require('./routes/dashboard');
 const receivablesRoutes = require('./routes/receivables');
 const adminRoutes = require('./routes/admin');
+const cashRegisterRoutes = require('./routes/cashRegister');
+const brandRoutes = require('./routes/brands');
+const productGroupRoutes = require('./routes/productGroups');
+const productSubgroupRoutes = require('./routes/productSubgroups');
+const supplierRoutes = require('./routes/suppliers');
 
 const app = express();
 
+// CORS - deve vir antes de outros middlewares
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 // Middleware de segurança
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // Compressão de resposta
 app.use(compression());
@@ -32,15 +47,14 @@ app.use(morgan('combined'));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100 // limite de 100 requisições por IP
+  max: 1000, // aumento para 1000 requisições por IP (desenvolvimento)
+  message: {
+    error: 'Muitas requisições. Tente novamente mais tarde.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/', limiter);
-
-// CORS
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
-}));
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
@@ -62,9 +76,14 @@ app.use('/api/products', productRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/sales', saleRoutes);
 app.use('/api/entries', entryRoutes);
-app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/receivables', receivablesRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/cash-register', cashRegisterRoutes);
+app.use('/api/brands', brandRoutes);
+app.use('/api/product-groups', productGroupRoutes);
+app.use('/api/product-subgroups', productSubgroupRoutes);
+app.use('/api/suppliers', supplierRoutes);
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {

@@ -57,7 +57,15 @@ const companySchema = new mongoose.Schema({
       openingTime: { type: Date },
       closingTime: { type: Date },
       initialAmount: { type: Number, default: 0 },
-      currentAmount: { type: Number, default: 0 }
+      currentAmount: { type: Number, default: 0 },
+      nextDayOpeningAmount: { type: Number, default: 0 },
+      adjustments: [{
+        amount: { type: Number, required: true },
+        operation: { type: String, enum: ['add', 'remove'], required: true },
+        reason: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+      }]
     },
     fiscal: {
       printerType: { 

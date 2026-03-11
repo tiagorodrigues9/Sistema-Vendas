@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, ShoppingCart, AlertCircle } from 'lucide-react';
@@ -10,11 +10,17 @@ import toast from 'react-hot-toast';
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [rememberMe, setRememberMe] = useState(false);
+  const { login, getRememberMe } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname || '/';
+
+  // Carregar preferência "lembrar-me" do localStorage
+  useEffect(() => {
+    setRememberMe(getRememberMe());
+  }, [getRememberMe]);
 
   const {
     register,
@@ -27,7 +33,7 @@ const Login = () => {
     setIsLoading(true);
     
     try {
-      await login(data.email, data.password);
+      await login(data.email, data.password, rememberMe);
       navigate(from, { replace: true });
     } catch (error) {
       const message = error.response?.data?.message || 'Erro ao fazer login';
@@ -147,6 +153,8 @@ const Login = () => {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
@@ -155,9 +163,12 @@ const Login = () => {
               </div>
 
               <div className="text-sm">
-                <a href="#" className="font-medium text-primary-600 hover:text-primary-500">
+                <Link 
+                  to={ROUTES.FORGOT_PASSWORD} 
+                  className="font-medium text-primary-600 hover:text-primary-500"
+                >
                   Esqueceu a senha?
-                </a>
+                </Link>
               </div>
             </div>
 

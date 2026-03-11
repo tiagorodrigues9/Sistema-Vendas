@@ -105,42 +105,43 @@ const productSchema = new mongoose.Schema({
 });
 
 productSchema.methods.addStock = function(quantity, reason, userId) {
-  this.quantity += quantity;
-  this.totalEntries += quantity;
-  this.stockMovements.push({
-    type: 'entry',
-    quantity,
-    reason,
-    user: userId
-  });
-  return this.save();
+  const Product = this.constructor;
+  return Product.findOneAndUpdate(
+    { _id: this._id },
+    {
+      $inc: { quantity: quantity, totalEntries: quantity },
+      $push: { stockMovements: { type: 'entry', quantity, reason, user: userId } }
+    },
+    { new: true }
+  );
 };
 
 productSchema.methods.removeStock = function(quantity, reason, userId) {
-  if (this.quantity >= quantity) {
-    this.quantity -= quantity;
-    this.totalSold += quantity;
-    this.stockMovements.push({
-      type: 'exit',
-      quantity,
-      reason,
-      user: userId
-    });
-    return this.save();
-  }
-  throw new Error('Estoque insuficiente');
+  const Product = this.constructor;
+  return Product.findOneAndUpdate(
+    { _id: this._id, quantity: { $gte: quantity } },
+    {
+      $inc: { quantity: -quantity, totalSold: quantity },
+      $push: { stockMovements: { type: 'exit', quantity, reason, user: userId } }
+    },
+    { new: true }
+  ).then(updated => {
+    if (!updated) throw new Error('Estoque insuficiente');
+    return updated;
+  });
 };
 
 productSchema.methods.adjustStock = function(newQuantity, reason, userId) {
   const adjustment = newQuantity - this.quantity;
-  this.quantity = newQuantity;
-  this.stockMovements.push({
-    type: 'adjustment',
-    quantity: adjustment,
-    reason,
-    user: userId
-  });
-  return this.save();
+  const Product = this.constructor;
+  return Product.findOneAndUpdate(
+    { _id: this._id },
+    {
+      $set: { quantity: newQuantity },
+      $push: { stockMovements: { type: 'adjustment', quantity: adjustment, reason, user: userId } }
+    },
+    { new: true }
+  );
 };
 
 module.exports = mongoose.model('Product', productSchema);
